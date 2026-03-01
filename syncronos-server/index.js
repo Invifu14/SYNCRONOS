@@ -19,7 +19,9 @@ let db;
             fecha_nacimiento TEXT,
             generacion TEXT,
             signo_zodiacal TEXT,
-            foto TEXT
+            foto TEXT,
+            ubicacion TEXT,
+            gustos TEXT
         );
         CREATE TABLE IF NOT EXISTS sincronias (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,7 +33,7 @@ let db;
     console.log("🗄️ Base de datos lista.");
 })();
 
-// Lógica de Signos y Fotos (Se mantiene igual)
+// Lógica de Signos y Fotos
 const obtenerSignoYFoto = (fechaStr) => {
     const fecha = new Date(fechaStr + "T12:00:00"); 
     const dia = fecha.getDate();
@@ -64,11 +66,38 @@ const obtenerGeneracion = (fechaStr) => {
 // --- RUTAS ---
 
 app.post('/registrar-cronos', async (req, res) => {
-    const { nombre, fecha_nacimiento } = req.body;
+    const { nombre, fecha_nacimiento, ubicacion, gustos } = req.body;
     const generacion = obtenerGeneracion(fecha_nacimiento);
     const { signo, foto } = obtenerSignoYFoto(fecha_nacimiento);
-    await db.run(`INSERT INTO usuarios (nombre, fecha_nacimiento, generacion, signo_zodiacal, foto) VALUES (?, ?, ?, ?, ?)`, [nombre, fecha_nacimiento, generacion, signo, foto]);
-    res.json({ mensaje: "OK" });
+    
+    const existing = await db.get(`SELECT * FROM usuarios WHERE nombre = ?`, [nombre]);
+    if (existing) {
+        // Si existe, iniciamos sesión
+        return res.json({ mensaje: "Login OK", usuario: existing });
+    }
+
+    await db.run(
+        `INSERT INTO usuarios (nombre, fecha_nacimiento, generacion, signo_zodiacal, foto, ubicacion, gustos) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [nombre, fecha_nacimiento, generacion, signo, foto, ubicacion || "", gustos || ""]
+    );
+    const nuevoUsuario = await db.get(`SELECT * FROM usuarios WHERE nombre = ?`, [nombre]);
+    res.json({ mensaje: "OK", usuario: nuevoUsuario });
+});
+
+// Ruta para el feed principal
+app.get('/usuarios/:nombre', async (req, res) => {
+    const { nombre } = req.params;
+    const resultados = await db.all("SELECT * FROM usuarios WHERE nombre != ?", [nombre]);
+    res.json(resultados);
+});
+
+// Ruta para sugerencias (misma generación)
+app.get('/sugerencias/:nombre', async (req, res) => {
+    const { nombre } = req.params;
+    const usuario = await db.get("SELECT * FROM usuarios WHERE nombre = ?", [nombre]);
+    if (!usuario) return res.json([]);
+    const resultados = await db.all("SELECT * FROM usuarios WHERE nombre != ? AND generacion = ?", [nombre, usuario.generacion]);
+    res.json(resultados);
 });
 
 app.post('/radar-cronos', async (req, res) => {
@@ -83,7 +112,6 @@ app.post('/conectar', async (req, res) => {
     res.json({ mensaje: `¡Sincronía enviada! ✨` });
 });
 
-// NUEVA RUTA: Ver mis conexiones
 app.get('/mis-sincronias/:nombre', async (req, res) => {
     const { nombre } = req.params;
     const lista = await db.all("SELECT usuario_destino, fecha_sincronia FROM sincronias WHERE usuario_origen = ?", [nombre]);
