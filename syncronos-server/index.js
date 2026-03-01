@@ -12,6 +12,7 @@ let db;
         filename: './database.db',
         driver: sqlite3.Database
     });
+    // Se agregan los campos metodo_registro, correo, telefono e intencion
     await db.exec(`
         CREATE TABLE IF NOT EXISTS usuarios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21,7 +22,11 @@ let db;
             signo_zodiacal TEXT,
             foto TEXT,
             ubicacion TEXT,
-            gustos TEXT
+            gustos TEXT,
+            metodo_registro TEXT,
+            correo TEXT,
+            telefono TEXT,
+            intencion TEXT
         );
         CREATE TABLE IF NOT EXISTS sincronias (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,6 +35,12 @@ let db;
             fecha_sincronia TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     `);
+    
+    // Si la tabla ya existía de antes, agregamos la columna manualmente para que no falle.
+    try {
+        await db.run("ALTER TABLE usuarios ADD COLUMN intencion TEXT;");
+    } catch(e) { /* Ya existe, ignorar */ }
+    
     console.log("🗄️ Base de datos lista.");
 })();
 
@@ -66,32 +77,30 @@ const obtenerGeneracion = (fechaStr) => {
 // --- RUTAS ---
 
 app.post('/registrar-cronos', async (req, res) => {
-    const { nombre, fecha_nacimiento, ubicacion, gustos } = req.body;
+    // Se añade intención en la recepción
+    const { nombre, fecha_nacimiento, ubicacion, gustos, metodo_registro, correo, telefono, intencion } = req.body;
     const generacion = obtenerGeneracion(fecha_nacimiento);
     const { signo, foto } = obtenerSignoYFoto(fecha_nacimiento);
     
     const existing = await db.get(`SELECT * FROM usuarios WHERE nombre = ?`, [nombre]);
     if (existing) {
-        // Si existe, iniciamos sesión
         return res.json({ mensaje: "Login OK", usuario: existing });
     }
 
     await db.run(
-        `INSERT INTO usuarios (nombre, fecha_nacimiento, generacion, signo_zodiacal, foto, ubicacion, gustos) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [nombre, fecha_nacimiento, generacion, signo, foto, ubicacion || "", gustos || ""]
+        `INSERT INTO usuarios (nombre, fecha_nacimiento, generacion, signo_zodiacal, foto, ubicacion, gustos, metodo_registro, correo, telefono, intencion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [nombre, fecha_nacimiento, generacion, signo, foto, ubicacion || "", gustos || "", metodo_registro || "", correo || "", telefono || "", intencion || ""]
     );
     const nuevoUsuario = await db.get(`SELECT * FROM usuarios WHERE nombre = ?`, [nombre]);
     res.json({ mensaje: "OK", usuario: nuevoUsuario });
 });
 
-// Ruta para el feed principal
 app.get('/usuarios/:nombre', async (req, res) => {
     const { nombre } = req.params;
     const resultados = await db.all("SELECT * FROM usuarios WHERE nombre != ?", [nombre]);
     res.json(resultados);
 });
 
-// Ruta para sugerencias (misma generación)
 app.get('/sugerencias/:nombre', async (req, res) => {
     const { nombre } = req.params;
     const usuario = await db.get("SELECT * FROM usuarios WHERE nombre = ?", [nombre]);
