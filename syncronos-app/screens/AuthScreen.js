@@ -12,6 +12,8 @@ export default function AuthScreen() {
   const [codigo, setCodigo] = useState('');
   const [nombre, setNombre] = useState('');
   const [intencion, setIntencion] = useState('');
+  const [genero, setGenero] = useState('');
+  const [generoInteres, setGeneroInteres] = useState('');
   const [fecha, setFecha] = useState('');
   const [ubicacion, setUbicacion] = useState('');
   const [gustos, setGustos] = useState('');
@@ -19,7 +21,7 @@ export default function AuthScreen() {
   const { setUser, MI_IP } = useContext(AppContext);
 
   const registrar = async () => {
-    if (!nombre || !fecha || !intencion) {
+    if (!nombre || !fecha || !intencion || !genero || !generoInteres) {
         Alert.alert("Error", "Faltan datos obligatorios");
         return;
     }
@@ -36,7 +38,9 @@ export default function AuthScreen() {
             metodo_registro: metodoRegistro,
             correo: correo,
             telefono: telefono,
-            intencion: intencion
+            intencion: intencion,
+            genero: genero,
+            genero_interes: generoInteres
         }),
         });
         const data = await response.json();
@@ -88,6 +92,16 @@ export default function AuthScreen() {
 
   const seleccionarIntencion = (intencionSeleccionada) => {
     setIntencion(intencionSeleccionada);
+    setStep('select_gender');
+  };
+
+  const seleccionarGenero = (generoSeleccionado) => {
+    setGenero(generoSeleccionado);
+    setStep('select_interest');
+  };
+
+  const seleccionarInteres = (interesSeleccionado) => {
+    setGeneroInteres(interesSeleccionado);
     setStep('details');
   };
 
@@ -170,10 +184,48 @@ export default function AuthScreen() {
           </View>
         );
 
-      case 'details':
+      case 'select_gender':
         return (
           <View style={styles.card}>
             <TouchableOpacity onPress={() => setStep('select_intent')} style={styles.backButton}>
+              <Text style={styles.backText}>⬅ Volver</Text>
+            </TouchableOpacity>
+            <Text style={styles.title}>¿Con qué género te identificas?</Text>
+            <TouchableOpacity style={[styles.button, styles.methodButton]} onPress={() => seleccionarGenero('Hombre')}>
+              <Text style={styles.buttonText}>♂️  Hombre</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.button, styles.methodButton]} onPress={() => seleccionarGenero('Mujer')}>
+              <Text style={styles.buttonText}>♀️  Mujer</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.button, styles.methodButton]} onPress={() => seleccionarGenero('Otro')}>
+              <Text style={styles.buttonText}>⚧️  Otro</Text>
+            </TouchableOpacity>
+          </View>
+        );
+
+      case 'select_interest':
+        return (
+          <View style={styles.card}>
+            <TouchableOpacity onPress={() => setStep('select_gender')} style={styles.backButton}>
+              <Text style={styles.backText}>⬅ Volver</Text>
+            </TouchableOpacity>
+            <Text style={styles.title}>¿Qué te interesa conocer?</Text>
+            <TouchableOpacity style={[styles.button, styles.methodButton]} onPress={() => seleccionarInteres('Hombres')}>
+              <Text style={styles.buttonText}>Hombres</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.button, styles.methodButton]} onPress={() => seleccionarInteres('Mujeres')}>
+              <Text style={styles.buttonText}>Mujeres</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.button, styles.methodButton]} onPress={() => seleccionarInteres('Todos')}>
+              <Text style={styles.buttonText}>Todos</Text>
+            </TouchableOpacity>
+          </View>
+        );
+
+      case 'details':
+        return (
+          <View style={styles.card}>
+            <TouchableOpacity onPress={() => setStep('select_interest')} style={styles.backButton}>
               <Text style={styles.backText}>⬅ Volver</Text>
             </TouchableOpacity>
             <Text style={styles.title}>Completar Identidad</Text>
