@@ -26,7 +26,9 @@ let db;
             metodo_registro TEXT,
             correo TEXT,
             telefono TEXT,
-            intencion TEXT
+            intencion TEXT,
+            genero TEXT,
+            genero_interes TEXT
         );
         CREATE TABLE IF NOT EXISTS sincronias (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,10 +38,10 @@ let db;
         );
     `);
     
-    // Si la tabla ya existía de antes, agregamos la columna manualmente para que no falle.
-    try {
-        await db.run("ALTER TABLE usuarios ADD COLUMN intencion TEXT;");
-    } catch(e) { /* Ya existe, ignorar */ }
+    // Si la tabla ya existía de antes, agregamos las columnas manualmente para que no falle.
+    try { await db.run("ALTER TABLE usuarios ADD COLUMN intencion TEXT;"); } catch(e) { /* Ya existe, ignorar */ }
+    try { await db.run("ALTER TABLE usuarios ADD COLUMN genero TEXT;"); } catch(e) { /* Ya existe, ignorar */ }
+    try { await db.run("ALTER TABLE usuarios ADD COLUMN genero_interes TEXT;"); } catch(e) { /* Ya existe, ignorar */ }
     
     console.log("🗄️ Base de datos lista.");
 })();
@@ -78,7 +80,7 @@ const obtenerGeneracion = (fechaStr) => {
 
 app.post('/registrar-cronos', async (req, res) => {
     // Se añade intención en la recepción
-    const { nombre, fecha_nacimiento, ubicacion, gustos, metodo_registro, correo, telefono, intencion } = req.body;
+    const { nombre, fecha_nacimiento, ubicacion, gustos, metodo_registro, correo, telefono, intencion, genero, genero_interes } = req.body;
     const generacion = obtenerGeneracion(fecha_nacimiento);
     const { signo, foto } = obtenerSignoYFoto(fecha_nacimiento);
     
@@ -88,8 +90,8 @@ app.post('/registrar-cronos', async (req, res) => {
     }
 
     await db.run(
-        `INSERT INTO usuarios (nombre, fecha_nacimiento, generacion, signo_zodiacal, foto, ubicacion, gustos, metodo_registro, correo, telefono, intencion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [nombre, fecha_nacimiento, generacion, signo, foto, ubicacion || "", gustos || "", metodo_registro || "", correo || "", telefono || "", intencion || ""]
+        `INSERT INTO usuarios (nombre, fecha_nacimiento, generacion, signo_zodiacal, foto, ubicacion, gustos, metodo_registro, correo, telefono, intencion, genero, genero_interes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [nombre, fecha_nacimiento, generacion, signo, foto, ubicacion || "", gustos || "", metodo_registro || "", correo || "", telefono || "", intencion || "", genero || "", genero_interes || ""]
     );
     const nuevoUsuario = await db.get(`SELECT * FROM usuarios WHERE nombre = ?`, [nombre]);
     res.json({ mensaje: "OK", usuario: nuevoUsuario });
@@ -97,15 +99,57 @@ app.post('/registrar-cronos', async (req, res) => {
 
 app.get('/usuarios/:nombre', async (req, res) => {
     const { nombre } = req.params;
-    const resultados = await db.all("SELECT * FROM usuarios WHERE nombre != ?", [nombre]);
+    const usuarioActual = await db.get("SELECT * FROM usuarios WHERE nombre = ?", [nombre]);
+
+    if (!usuarioActual) {
+        return res.json([]);
+    }
+
+    // Mapear el género de interés para la consulta
+    let miInteresMapeado = usuarioActual.genero_interes;
+    if (miInteresMapeado === 'Hombres') miInteresMapeado = 'Hombre';
+    if (miInteresMapeado === 'Mujeres') miInteresMapeado = 'Mujer';
+
+    // Para el otro usuario, debemos ver si su interés nos incluye
+    let miGeneroMapeado = usuarioActual.genero;
+    if (miGeneroMapeado === 'Hombre') miGeneroMapeado = 'Hombres';
+    if (miGeneroMapeado === 'Mujer') miGeneroMapeado = 'Mujeres';
+
+    // Filtrar: El género del otro debe estar en mi interes (o me interesa Todo),
+    // y mi género debe estar en el interés del otro (o le interesa Todo).
+    const resultados = await db.all(`
+        SELECT * FROM usuarios
+        WHERE nombre != ?
+        AND (genero = ? OR ? = 'Todos')
+        AND (? = genero_interes OR genero_interes = 'Todos')
+    `, [nombre, miInteresMapeado, usuarioActual.genero_interes, miGeneroMapeado]);
+
     res.json(resultados);
 });
 
 app.get('/sugerencias/:nombre', async (req, res) => {
     const { nombre } = req.params;
-    const usuario = await db.get("SELECT * FROM usuarios WHERE nombre = ?", [nombre]);
-    if (!usuario) return res.json([]);
-    const resultados = await db.all("SELECT * FROM usuarios WHERE nombre != ? AND generacion = ?", [nombre, usuario.generacion]);
+    const usuarioActual = await db.get("SELECT * FROM usuarios WHERE nombre = ?", [nombre]);
+    if (!usuarioActual) return res.json([]);
+
+    // Mapear el género de interés para la consulta
+    let miInteresMapeado = usuarioActual.genero_interes;
+    if (miInteresMapeado === 'Hombres') miInteresMapeado = 'Hombre';
+    if (miInteresMapeado === 'Mujeres') miInteresMapeado = 'Mujer';
+
+    // Para el otro usuario, debemos ver si su interés nos incluye
+    let miGeneroMapeado = usuarioActual.genero;
+    if (miGeneroMapeado === 'Hombre') miGeneroMapeado = 'Hombres';
+    if (miGeneroMapeado === 'Mujer') miGeneroMapeado = 'Mujeres';
+
+    const resultados = await db.all(`
+        SELECT * FROM usuarios
+        WHERE nombre != ?
+        AND generacion = ?
+        AND (genero = ? OR ? = 'Todos')
+        AND (? = genero_interes OR genero_interes = 'Todos')
+    `, [nombre, usuarioActual.generacion, miInteresMapeado, usuarioActual.genero_interes, miGeneroMapeado]);
+
     res.json(resultados);
 });
 
