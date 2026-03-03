@@ -1,3 +1,4 @@
+const cors = require('cors');
 ﻿const express = require('express');
 const sqlite3 = require('sqlite3');
 const { open } = require('sqlite');
@@ -5,6 +6,7 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json());
+app.use(cors());
 
 let db;
 (async () => {
@@ -34,6 +36,7 @@ let db;
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             usuario_origen TEXT,
             usuario_destino TEXT,
+            tipo TEXT DEFAULT 'like',
             fecha_sincronia TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     `);
@@ -42,6 +45,7 @@ let db;
     try { await db.run("ALTER TABLE usuarios ADD COLUMN intencion TEXT;"); } catch(e) { /* Ya existe, ignorar */ }
     try { await db.run("ALTER TABLE usuarios ADD COLUMN genero TEXT;"); } catch(e) { /* Ya existe, ignorar */ }
     try { await db.run("ALTER TABLE usuarios ADD COLUMN genero_interes TEXT;"); } catch(e) { /* Ya existe, ignorar */ }
+    try { await db.run("ALTER TABLE sincronias ADD COLUMN tipo TEXT DEFAULT 'like';"); } catch(e) { /* Ya existe, ignorar */ }
     
     console.log("🗄️ Base de datos lista.");
 })();
@@ -159,15 +163,41 @@ app.post('/radar-cronos', async (req, res) => {
     res.json(resultados);
 });
 
-app.post('/conectar', async (req, res) => {
-    const { mi_nombre, destino_nombre } = req.body;
-    await db.run(`INSERT INTO sincronias (usuario_origen, usuario_destino) VALUES (?, ?)`, [mi_nombre, destino_nombre]);
-    res.json({ mensaje: `¡Sincronía enviada! ✨` });
+app.post('/swipe', async (req, res) => {
+    const { mi_nombre, destino_nombre, tipo } = req.body;
+
+    // Solo registramos el evento, ya sea 'like' o 'dislike'
+    await db.run(
+        `INSERT INTO sincronias (usuario_origen, usuario_destino, tipo) VALUES (?, ?, ?)`,
+        [mi_nombre, destino_nombre, tipo]
+    );
+
+    let isMatch = false;
+
+    // Si es un like, verificamos si el destino ya nos dio like
+    if (tipo === 'like') {
+        const reverseLike = await db.get(
+            `SELECT * FROM sincronias WHERE usuario_origen = ? AND usuario_destino = ? AND tipo IN ('like', 'match')`,
+            [destino_nombre, mi_nombre]
+        );
+
+        if (reverseLike) {
+            // ¡Es un Match!
+            isMatch = true;
+            // Actualizamos ambos registros a 'match'
+            await db.run(
+                `UPDATE sincronias SET tipo = 'match' WHERE (usuario_origen = ? AND usuario_destino = ?) OR (usuario_origen = ? AND usuario_destino = ?)`,
+                [mi_nombre, destino_nombre, destino_nombre, mi_nombre]
+            );
+        }
+    }
+
+    res.json({ mensaje: "OK", match: isMatch });
 });
 
 app.get('/mis-sincronias/:nombre', async (req, res) => {
     const { nombre } = req.params;
-    const lista = await db.all("SELECT usuario_destino, fecha_sincronia FROM sincronias WHERE usuario_origen = ?", [nombre]);
+    const lista = await db.all("SELECT usuario_destino, fecha_sincronia, tipo FROM sincronias WHERE usuario_origen = ? AND tipo IN ('like', 'match')", [nombre]);
     res.json(lista);
 });
 

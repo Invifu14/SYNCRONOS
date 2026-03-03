@@ -1,6 +1,9 @@
 import React, { useEffect, useState, useContext } from 'react';
-import { StyleSheet, Text, View, Image, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { StyleSheet, Text, View, Image, TouchableOpacity, Alert, Dimensions } from 'react-native';
+import Swiper from 'react-native-deck-swiper';
 import { AppContext } from '../App';
+
+const { height } = Dimensions.get('window');
 
 const calcularEdad = (fecha) => {
     const hoy = new Date();
@@ -17,10 +20,12 @@ export default function MainScreen() {
     const [usuarios, setUsuarios] = useState([]);
     const { user, MI_IP } = useContext(AppContext);
 
+    const baseUrl = MI_IP === 'localhost' ? 'http://localhost:3000' : `http://${MI_IP}:3000`;
+
     useEffect(() => {
         const fetchUsuarios = async () => {
             try {
-                const response = await fetch(`http://${MI_IP}:3000/usuarios/${user.nombre}`);
+                const response = await fetch(`${baseUrl}/usuarios/${user.nombre}`);
                 const data = await response.json();
                 setUsuarios(data);
             } catch (e) {
@@ -30,51 +35,95 @@ export default function MainScreen() {
         fetchUsuarios();
     }, []);
 
-    const conectar = async (destino) => {
+    const handleSwipe = async (index, tipo) => {
+        const destino = usuarios[index];
+        if (!destino) return;
+
         try {
-            await fetch(`http://${MI_IP}:3000/conectar`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mi_nombre: user.nombre, destino_nombre: destino }),
+            const response = await fetch(`${baseUrl}/swipe`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mi_nombre: user.nombre, destino_nombre: destino.nombre, tipo }),
             });
-            Alert.alert("✨ Éxito", "Sincronía grabada en la bóveda.");
+            const data = await response.json();
+
+            if (data.match) {
+                Alert.alert("🎉 ¡IT'S A MATCH! 🎉", `Tú y ${destino.nombre} se han gustado mutuamente. Revisa tu bóveda.`);
+            }
         } catch(e) {
-            Alert.alert("Error", "No se pudo sincronizar.");
+            console.error("Error al registrar swipe:", e);
         }
     };
 
     return (
-        <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 50 }}>
+        <View style={styles.container}>
             {usuarios.length === 0 ? (
-                <Text style={styles.emptyText}>No hay usuarios sincronizados cerca.</Text>
+                <Text style={styles.emptyText}>No hay usuarios cerca por ahora.</Text>
             ) : (
-                usuarios.map((item) => (
-                    <View key={item.id} style={styles.resultItem}>
-                        <Image source={{ uri: item.foto }} style={styles.avatar} />
-                        <View style={{flex: 1, marginLeft: 15}}>
-                            <Text style={styles.resultName}>{item.nombre}, {calcularEdad(item.fecha_nacimiento)}</Text>
-                            <Text style={styles.resultInfo}>{item.ubicacion || 'Ubicación desconocida'}</Text>
-                            {item.gustos ? <Text style={styles.gustosText}>🎭 {item.gustos}</Text> : null}
-                            <Text style={styles.signoText}>{item.signo_zodiacal}</Text>
-                        </View>
-                        <TouchableOpacity style={styles.syncBtn} onPress={() => conectar(item.nombre)}>
-                            <Text style={{fontSize: 20}}>✨</Text>
-                        </TouchableOpacity>
-                    </View>
-                ))
+                <Swiper
+                    cards={usuarios}
+                    renderCard={(card) => {
+                        if (!card) return null;
+                        return (
+                            <View style={styles.card}>
+                                <Image source={{ uri: card.foto }} style={styles.cardImage} />
+                                <View style={styles.cardInfo}>
+                                    <Text style={styles.cardTitle}>{card.nombre}, {calcularEdad(card.fecha_nacimiento)}</Text>
+                                    <Text style={styles.cardSubtitle}>{card.ubicacion || 'Ubicación desconocida'}</Text>
+                                    <Text style={styles.cardSigno}>{card.signo_zodiacal} - {card.generacion}</Text>
+                                    {card.gustos ? <Text style={styles.cardGustos}>🎭 {card.gustos}</Text> : null}
+                                </View>
+                            </View>
+                        );
+                    }}
+                    onSwipedRight={(index) => handleSwipe(index, 'like')}
+                    onSwipedLeft={(index) => handleSwipe(index, 'dislike')}
+                    onSwipedAll={() => setUsuarios([])}
+                    cardIndex={0}
+                    backgroundColor={'transparent'}
+                    stackSize={3}
+                    disableBottomSwipe
+                    disableTopSwipe
+                    overlayLabels={{
+                        left: {
+                            title: 'NO',
+                            style: { label: { backgroundColor: '#FF3B30', color: '#fff', fontSize: 32 }, wrapper: { flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'flex-start', marginTop: 30, marginLeft: -30 } }
+                        },
+                        right: {
+                            title: 'LIKE',
+                            style: { label: { backgroundColor: '#34C759', color: '#fff', fontSize: 32 }, wrapper: { flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'flex-start', marginTop: 30, marginLeft: 30 } }
+                        }
+                    }}
+                />
             )}
-        </ScrollView>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#050510', paddingHorizontal: 15, paddingTop: 20 },
-    emptyText: { color: '#666', textAlign: 'center', marginTop: 50, fontSize: 16 },
-    resultItem: { width: '100%', backgroundColor: '#11112e', padding: 15, borderRadius: 20, marginBottom: 12, flexDirection: 'row', alignItems: 'center' },
-    avatar: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#0f0f25' },
-    resultName: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-    resultInfo: { color: '#888', fontSize: 13, marginBottom: 2 },
-    gustosText: { color: '#bbb', fontSize: 12, fontStyle: 'italic', marginBottom: 2 },
-    signoText: { color: '#D4AF37', fontSize: 12 },
-    syncBtn: { backgroundColor: '#1a1a3a', width: 45, height: 45, borderRadius: 22.5, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#D4AF37' },
+    container: { flex: 1, backgroundColor: '#050510' },
+    emptyText: { color: '#666', textAlign: 'center', marginTop: 100, fontSize: 16 },
+    card: {
+        flex: 1,
+        borderRadius: 20,
+        backgroundColor: '#11112e',
+        borderColor: '#D4AF37',
+        borderWidth: 1,
+        justifyContent: 'flex-end',
+        overflow: 'hidden',
+        height: height * 0.7,
+    },
+    cardImage: {
+        width: '100%',
+        height: '100%',
+        position: 'absolute'
+    },
+    cardInfo: {
+        padding: 20,
+        backgroundColor: 'rgba(5, 5, 16, 0.8)',
+    },
+    cardTitle: { color: '#fff', fontSize: 26, fontWeight: 'bold' },
+    cardSubtitle: { color: '#ccc', fontSize: 16, marginTop: 4 },
+    cardSigno: { color: '#D4AF37', fontSize: 16, fontWeight: 'bold', marginTop: 4 },
+    cardGustos: { color: '#bbb', fontSize: 14, fontStyle: 'italic', marginTop: 8 },
 });

@@ -36,7 +36,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   
   // Recuerda poner aquí tu IP si pruebas en móvil (ej. '192.168.1.113')
-  const MI_IP = '192.168.1.113'; 
+  const MI_IP = 'localhost';
   
   return (
     <AppContext.Provider value={{ user, setUser, MI_IP }}>
