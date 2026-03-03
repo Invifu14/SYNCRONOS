@@ -27,7 +27,8 @@ export default function AuthScreen() {
     }
     
     try {
-        const response = await fetch(`http://${MI_IP}:3000/registrar-cronos`, {
+        const url = MI_IP === 'localhost' ? 'http://localhost:3000' : `http://${MI_IP}:3000`;
+        const response = await fetch(`${url}/registrar-cronos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
