@@ -30,7 +30,9 @@ let db;
             telefono TEXT,
             intencion TEXT,
             genero TEXT,
-            genero_interes TEXT
+            genero_interes TEXT,
+            latitud REAL,
+            longitud REAL
         );
         CREATE TABLE IF NOT EXISTS sincronias (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -45,6 +47,8 @@ let db;
     try { await db.run("ALTER TABLE usuarios ADD COLUMN intencion TEXT;"); } catch(e) { /* Ya existe, ignorar */ }
     try { await db.run("ALTER TABLE usuarios ADD COLUMN genero TEXT;"); } catch(e) { /* Ya existe, ignorar */ }
     try { await db.run("ALTER TABLE usuarios ADD COLUMN genero_interes TEXT;"); } catch(e) { /* Ya existe, ignorar */ }
+    try { await db.run("ALTER TABLE usuarios ADD COLUMN latitud REAL;"); } catch(e) { /* Ya existe, ignorar */ }
+    try { await db.run("ALTER TABLE usuarios ADD COLUMN longitud REAL;"); } catch(e) { /* Ya existe, ignorar */ }
     try { await db.run("ALTER TABLE sincronias ADD COLUMN tipo TEXT DEFAULT 'like';"); } catch(e) { /* Ya existe, ignorar */ }
     
     console.log("🗄️ Base de datos lista.");
@@ -82,9 +86,23 @@ const obtenerGeneracion = (fechaStr) => {
 
 // --- RUTAS ---
 
+// Función para calcular distancia (Haversine) en Kilómetros
+const calcularDistancia = (lat1, lon1, lat2, lon2) => {
+    if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
+    const R = 6371; // Radio de la Tierra en km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a =
+        Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c; // Distancia en km
+};
+
 app.post('/registrar-cronos', async (req, res) => {
     // Se añade intención en la recepción
-    const { nombre, fecha_nacimiento, ubicacion, gustos, metodo_registro, correo, telefono, intencion, genero, genero_interes } = req.body;
+    const { nombre, fecha_nacimiento, ubicacion, gustos, metodo_registro, correo, telefono, intencion, genero, genero_interes, latitud, longitud } = req.body;
     const generacion = obtenerGeneracion(fecha_nacimiento);
     const { signo, foto } = obtenerSignoYFoto(fecha_nacimiento);
     
@@ -94,8 +112,8 @@ app.post('/registrar-cronos', async (req, res) => {
     }
 
     await db.run(
-        `INSERT INTO usuarios (nombre, fecha_nacimiento, generacion, signo_zodiacal, foto, ubicacion, gustos, metodo_registro, correo, telefono, intencion, genero, genero_interes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [nombre, fecha_nacimiento, generacion, signo, foto, ubicacion || "", gustos || "", metodo_registro || "", correo || "", telefono || "", intencion || "", genero || "", genero_interes || ""]
+        `INSERT INTO usuarios (nombre, fecha_nacimiento, generacion, signo_zodiacal, foto, ubicacion, gustos, metodo_registro, correo, telefono, intencion, genero, genero_interes, latitud, longitud) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [nombre, fecha_nacimiento, generacion, signo, foto, ubicacion || "", gustos || "", metodo_registro || "", correo || "", telefono || "", intencion || "", genero || "", genero_interes || "", latitud || null, longitud || null]
     );
     const nuevoUsuario = await db.get(`SELECT * FROM usuarios WHERE nombre = ?`, [nombre]);
     res.json({ mensaje: "OK", usuario: nuevoUsuario });
@@ -128,7 +146,15 @@ app.get('/usuarios/:nombre', async (req, res) => {
         AND (? = genero_interes OR genero_interes = 'Todos')
     `, [nombre, miInteresMapeado, usuarioActual.genero_interes, miGeneroMapeado]);
 
-    res.json(resultados);
+    // Filtrar por distancia (50km máximo, o incluir si no hay datos de geolocalización)
+    const resultadosFiltrados = resultados.filter(u => {
+        if (!usuarioActual.latitud || !u.latitud) return true; // Incluir si alguno no tiene ubicación para no romper perfiles viejos
+        const dist = calcularDistancia(usuarioActual.latitud, usuarioActual.longitud, u.latitud, u.longitud);
+        u.distancia = Math.round(dist); // Agregamos la distancia para poder mostrarla si queremos
+        return dist <= 50;
+    });
+
+    res.json(resultadosFiltrados);
 });
 
 app.get('/sugerencias/:nombre', async (req, res) => {
@@ -154,7 +180,15 @@ app.get('/sugerencias/:nombre', async (req, res) => {
         AND (? = genero_interes OR genero_interes = 'Todos')
     `, [nombre, usuarioActual.generacion, miInteresMapeado, usuarioActual.genero_interes, miGeneroMapeado]);
 
-    res.json(resultados);
+    // Filtrar por distancia (50km máximo)
+    const resultadosFiltrados = resultados.filter(u => {
+        if (!usuarioActual.latitud || !u.latitud) return true;
+        const dist = calcularDistancia(usuarioActual.latitud, usuarioActual.longitud, u.latitud, u.longitud);
+        u.distancia = Math.round(dist);
+        return dist <= 50;
+    });
+
+    res.json(resultadosFiltrados);
 });
 
 app.post('/radar-cronos', async (req, res) => {
