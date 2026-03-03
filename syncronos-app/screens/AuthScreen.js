@@ -1,5 +1,6 @@
 import React, { useState, useContext } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import * as Location from 'expo-location';
 import { AppContext } from '../App';
 
 export default function AuthScreen() {
@@ -18,7 +19,27 @@ export default function AuthScreen() {
   const [ubicacion, setUbicacion] = useState('');
   const [gustos, setGustos] = useState('');
 
+  const [latitud, setLatitud] = useState(null);
+  const [longitud, setLongitud] = useState(null);
+  const [locationErrorMsg, setLocationErrorMsg] = useState(null);
+
   const { setUser, MI_IP } = useContext(AppContext);
+
+  const obtenerUbicacionGPS = async () => {
+    let { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      setLocationErrorMsg('Permiso de ubicación denegado. Se usará ubicación manual.');
+      return;
+    }
+    try {
+      let location = await Location.getCurrentPositionAsync({});
+      setLatitud(location.coords.latitude);
+      setLongitud(location.coords.longitude);
+      setLocationErrorMsg('✅ Ubicación GPS obtenida');
+    } catch(e) {
+      setLocationErrorMsg('Error al obtener GPS');
+    }
+  };
 
   const registrar = async () => {
     if (!nombre || !fecha || !intencion || !genero || !generoInteres) {
@@ -41,7 +62,9 @@ export default function AuthScreen() {
             telefono: telefono,
             intencion: intencion,
             genero: genero,
-            genero_interes: generoInteres
+            genero_interes: generoInteres,
+            latitud,
+            longitud
         }),
         });
         const data = await response.json();
@@ -231,7 +254,13 @@ export default function AuthScreen() {
             </TouchableOpacity>
             <Text style={styles.title}>Completar Identidad</Text>
             <TextInput style={styles.input} placeholder="Tu Nacimiento (AAAA-MM-DD)" placeholderTextColor="#666" onChangeText={setFecha} />
-            <TextInput style={styles.input} placeholder="Ubicación (Ciudad, País)" placeholderTextColor="#666" onChangeText={setUbicacion} />
+            <TextInput style={styles.input} placeholder="Ubicación manual (Ciudad, País)" placeholderTextColor="#666" onChangeText={setUbicacion} />
+
+            <TouchableOpacity style={[styles.button, styles.methodButton, {backgroundColor: '#2a2a4a', padding: 12}]} onPress={obtenerUbicacionGPS}>
+              <Text style={[styles.buttonText, {color: '#fff', fontSize: 14}]}>📍 OBTENER MI UBICACIÓN GPS</Text>
+            </TouchableOpacity>
+            {locationErrorMsg && <Text style={{color: '#D4AF37', textAlign: 'center', marginBottom: 10}}>{locationErrorMsg}</Text>}
+
             <TextInput style={styles.input} placeholder="Tus gustos separados por comas" placeholderTextColor="#666" onChangeText={setGustos} />
             <TouchableOpacity style={styles.button} onPress={registrar}>
               <Text style={styles.buttonText}>FINALIZAR REGISTRO</Text>
