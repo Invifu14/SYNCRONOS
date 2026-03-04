@@ -22,6 +22,12 @@ export default function MainScreen() {
 
     const baseUrl = MI_IP === 'localhost' ? 'http://localhost:3000' : `http://${MI_IP}:3000`;
 
+    const obtenerUrlImagen = (ruta) => {
+        if (!ruta) return 'https://robohash.org/default.png';
+        if (ruta.startsWith('http')) return ruta; // Ya es una URL completa (ej. robohash)
+        return `${baseUrl}${ruta}`; // Es una ruta relativa de multer
+    };
+
     useEffect(() => {
         const fetchUsuarios = async () => {
             try {
@@ -66,7 +72,7 @@ export default function MainScreen() {
                         if (!card) return null;
                         return (
                             <View style={styles.card}>
-                                <Image source={{ uri: card.foto }} style={styles.cardImage} />
+                                <Image source={{ uri: obtenerUrlImagen(card.foto) }} style={styles.cardImage} />
                                 <View style={styles.cardInfo}>
                                     <Text style={styles.cardTitle}>{card.nombre}, {calcularEdad(card.fecha_nacimiento)}</Text>
                                     <Text style={styles.cardSubtitle}>{card.ubicacion || 'Ubicación desconocida'}</Text>

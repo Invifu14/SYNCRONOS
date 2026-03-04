@@ -2,11 +2,32 @@ const cors = require('cors');
 ﻿const express = require('express');
 const sqlite3 = require('sqlite3');
 const { open } = require('sqlite');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const app = express();
 const PORT = 3000;
 
 app.use(express.json());
 app.use(cors());
+
+// Asegurar que la carpeta uploads exista
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)){
+    fs.mkdirSync(uploadDir);
+}
+app.use('/uploads', express.static(uploadDir));
+
+// Configurar multer
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, uploadDir)
+    },
+    filename: function (req, file, cb) {
+        cb(null, Date.now() + path.extname(file.originalname))
+    }
+});
+const upload = multer({ storage: storage });
 
 let db;
 (async () => {
@@ -32,7 +53,8 @@ let db;
             genero TEXT,
             genero_interes TEXT,
             latitud REAL,
-            longitud REAL
+            longitud REAL,
+            fotos TEXT
         );
         CREATE TABLE IF NOT EXISTS sincronias (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,6 +71,7 @@ let db;
     try { await db.run("ALTER TABLE usuarios ADD COLUMN genero_interes TEXT;"); } catch(e) { /* Ya existe, ignorar */ }
     try { await db.run("ALTER TABLE usuarios ADD COLUMN latitud REAL;"); } catch(e) { /* Ya existe, ignorar */ }
     try { await db.run("ALTER TABLE usuarios ADD COLUMN longitud REAL;"); } catch(e) { /* Ya existe, ignorar */ }
+    try { await db.run("ALTER TABLE usuarios ADD COLUMN fotos TEXT;"); } catch(e) { /* Ya existe, ignorar */ }
     try { await db.run("ALTER TABLE sincronias ADD COLUMN tipo TEXT DEFAULT 'like';"); } catch(e) { /* Ya existe, ignorar */ }
     
     console.log("🗄️ Base de datos lista.");
@@ -100,20 +123,32 @@ const calcularDistancia = (lat1, lon1, lat2, lon2) => {
     return R * c; // Distancia en km
 };
 
-app.post('/registrar-cronos', async (req, res) => {
+app.post('/registrar-cronos', upload.array('fotos', 6), async (req, res) => {
     // Se añade intención en la recepción
     const { nombre, fecha_nacimiento, ubicacion, gustos, metodo_registro, correo, telefono, intencion, genero, genero_interes, latitud, longitud } = req.body;
     const generacion = obtenerGeneracion(fecha_nacimiento);
-    const { signo, foto } = obtenerSignoYFoto(fecha_nacimiento);
+    const astros = obtenerSignoYFoto(fecha_nacimiento);
+    let signo = astros.signo;
+
+    // Procesar imágenes subidas o usar el fallback de robohash
+    let fotosArray = [];
+    let fotoPrincipal = astros.foto;
+
+    if (req.files && req.files.length > 0) {
+        fotosArray = req.files.map(f => `/uploads/${f.filename}`);
+        fotoPrincipal = fotosArray[0];
+    }
     
+    const fotosJson = JSON.stringify(fotosArray);
+
     const existing = await db.get(`SELECT * FROM usuarios WHERE nombre = ?`, [nombre]);
     if (existing) {
         return res.json({ mensaje: "Login OK", usuario: existing });
     }
 
     await db.run(
-        `INSERT INTO usuarios (nombre, fecha_nacimiento, generacion, signo_zodiacal, foto, ubicacion, gustos, metodo_registro, correo, telefono, intencion, genero, genero_interes, latitud, longitud) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [nombre, fecha_nacimiento, generacion, signo, foto, ubicacion || "", gustos || "", metodo_registro || "", correo || "", telefono || "", intencion || "", genero || "", genero_interes || "", latitud || null, longitud || null]
+        `INSERT INTO usuarios (nombre, fecha_nacimiento, generacion, signo_zodiacal, foto, ubicacion, gustos, metodo_registro, correo, telefono, intencion, genero, genero_interes, latitud, longitud, fotos) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [nombre, fecha_nacimiento, generacion, signo, fotoPrincipal, ubicacion || "", gustos || "", metodo_registro || "", correo || "", telefono || "", intencion || "", genero || "", genero_interes || "", latitud || null, longitud || null, fotosJson]
     );
     const nuevoUsuario = await db.get(`SELECT * FROM usuarios WHERE nombre = ?`, [nombre]);
     res.json({ mensaje: "OK", usuario: nuevoUsuario });

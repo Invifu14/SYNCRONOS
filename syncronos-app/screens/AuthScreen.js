@@ -1,6 +1,7 @@
 import React, { useState, useContext } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
 import { AppContext } from '../App';
 
 export default function AuthScreen() {
@@ -18,6 +19,7 @@ export default function AuthScreen() {
   const [fecha, setFecha] = useState('');
   const [ubicacion, setUbicacion] = useState('');
   const [gustos, setGustos] = useState('');
+  const [fotosLocales, setFotosLocales] = useState([]);
 
   const [latitud, setLatitud] = useState(null);
   const [longitud, setLongitud] = useState(null);
@@ -49,24 +51,36 @@ export default function AuthScreen() {
     
     try {
         const url = MI_IP === 'localhost' ? 'http://localhost:3000' : `http://${MI_IP}:3000`;
-        const response = await fetch(`${url}/registrar-cronos`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            nombre, 
-            fecha_nacimiento: fecha, 
-            ubicacion, 
-            gustos,
-            metodo_registro: metodoRegistro,
-            correo: correo,
-            telefono: telefono,
-            intencion: intencion,
-            genero: genero,
-            genero_interes: generoInteres,
-            latitud,
-            longitud
-        }),
+        let formData = new FormData();
+        formData.append('nombre', nombre);
+        formData.append('fecha_nacimiento', fecha);
+        formData.append('ubicacion', ubicacion || "");
+        formData.append('gustos', gustos || "");
+        formData.append('metodo_registro', metodoRegistro || "");
+        formData.append('correo', correo || "");
+        formData.append('telefono', telefono || "");
+        formData.append('intencion', intencion);
+        formData.append('genero', genero);
+        formData.append('genero_interes', generoInteres);
+        if(latitud !== null) formData.append('latitud', latitud.toString());
+        if(longitud !== null) formData.append('longitud', longitud.toString());
+
+        fotosLocales.forEach((foto, index) => {
+          let uriParts = foto.uri.split('.');
+          let fileType = uriParts[uriParts.length - 1];
+          formData.append('fotos', {
+            uri: foto.uri,
+            name: `photo_${index}.${fileType}`,
+            type: `image/${fileType}`
+          });
         });
+
+        const response = await fetch(`${url}/registrar-cronos`, {
+            method: 'POST',
+            body: formData,
+            // Importante: No establecer 'Content-Type' manualmente con FormData
+        });
+
         const data = await response.json();
         if (data.mensaje === "OK" || data.mensaje === "Login OK") {
             setUser(data.usuario);
@@ -126,7 +140,20 @@ export default function AuthScreen() {
 
   const seleccionarInteres = (interesSeleccionado) => {
     setGeneroInteres(interesSeleccionado);
-    setStep('details');
+    setStep('select_photos');
+  };
+
+  const seleccionarFotos = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      selectionLimit: 6,
+      quality: 0.8,
+    });
+
+    if (!result.canceled) {
+      setFotosLocales(result.assets);
+    }
   };
 
   const renderStep = () => {
@@ -246,10 +273,36 @@ export default function AuthScreen() {
           </View>
         );
 
-      case 'details':
+      case 'select_photos':
         return (
           <View style={styles.card}>
             <TouchableOpacity onPress={() => setStep('select_interest')} style={styles.backButton}>
+              <Text style={styles.backText}>⬅ Volver</Text>
+            </TouchableOpacity>
+            <Text style={styles.title}>Sube tus mejores fotos (Hasta 6)</Text>
+
+            <TouchableOpacity style={[styles.button, styles.methodButton]} onPress={seleccionarFotos}>
+              <Text style={styles.buttonText}>📸 SELECCIONAR FOTOS</Text>
+            </TouchableOpacity>
+
+            {fotosLocales.length > 0 && (
+              <View style={{flexDirection: 'row', flexWrap: 'wrap', marginTop: 10}}>
+                {fotosLocales.map((foto, index) => (
+                  <Text key={index} style={{color: '#fff', marginRight: 10}}>✅ Foto {index + 1}</Text>
+                ))}
+              </View>
+            )}
+
+            <TouchableOpacity style={styles.button} onPress={() => setStep('details')}>
+              <Text style={styles.buttonText}>CONTINUAR</Text>
+            </TouchableOpacity>
+          </View>
+        );
+
+      case 'details':
+        return (
+          <View style={styles.card}>
+            <TouchableOpacity onPress={() => setStep('select_photos')} style={styles.backButton}>
               <Text style={styles.backText}>⬅ Volver</Text>
             </TouchableOpacity>
             <Text style={styles.title}>Completar Identidad</Text>
