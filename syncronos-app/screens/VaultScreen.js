@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useContext, useCallback } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { AppContext } from '../App';
 
 export default function VaultScreen() {
     const [misConexiones, setMisConexiones] = useState([]);
     const { user, MI_IP } = useContext(AppContext);
+    const navigation = useNavigation();
 
     const verMisConexiones = async () => {
         try {
@@ -35,19 +36,26 @@ export default function VaultScreen() {
             ) : (
                 misConexiones.map((con, index) => {
                     const isMatch = con.tipo === 'match';
+
+                    const Component = isMatch ? TouchableOpacity : View;
+                    const props = isMatch ? { onPress: () => navigation.navigate('Chat', { otroUsuario: con.usuario_destino }) } : {};
+
                     return (
-                        <View key={index} style={[styles.vaultItem, isMatch && styles.matchItem]}>
+                        <Component key={index} style={[styles.vaultItem, isMatch && styles.matchItem]} {...props}>
                             {isMatch ? (
-                                <Text style={{color: '#fff', fontSize: 16}}>
-                                    🎉 ¡Tú y <Text style={{color: '#34C759', fontWeight: 'bold'}}>{con.usuario_destino}</Text> se han gustado mutuamente!
-                                </Text>
+                                <View>
+                                    <Text style={{color: '#fff', fontSize: 16}}>
+                                        🎉 ¡Tú y <Text style={{color: '#34C759', fontWeight: 'bold'}}>{con.usuario_destino}</Text> se han gustado mutuamente!
+                                    </Text>
+                                    <Text style={{color: '#D4AF37', fontSize: 14, marginTop: 5, fontStyle: 'italic'}}>💬 Toca para chatear</Text>
+                                </View>
                             ) : (
                                 <Text style={{color: '#fff', fontSize: 16}}>
                                     Le has dado Like a <Text style={{color: '#D4AF37', fontWeight: 'bold'}}>{con.usuario_destino}</Text>
                                 </Text>
                             )}
                             <Text style={{color: '#888', fontSize: 12, marginTop: 5}}>{con.fecha_sincronia}</Text>
-                        </View>
+                        </Component>
                     );
                 })
             )}

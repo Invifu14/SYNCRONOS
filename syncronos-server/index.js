@@ -5,7 +5,13 @@ const { open } = require('sqlite');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
+const { Server } = require('socket.io');
+
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: '*' } });
+
 const PORT = 3000;
 
 app.use(express.json());
@@ -62,6 +68,13 @@ let db;
             usuario_destino TEXT,
             tipo TEXT DEFAULT 'like',
             fecha_sincronia TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS mensajes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            de TEXT,
+            para TEXT,
+            texto TEXT,
+            fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     `);
     
@@ -324,4 +337,49 @@ app.get('/mis-sincronias/:nombre', async (req, res) => {
     res.json(lista);
 });
 
-app.listen(PORT, () => console.log(`🚀 SYNCRONOS en puerto ${PORT}`));
+app.get('/mensajes/:yo/:otro', async (req, res) => {
+    const { yo, otro } = req.params;
+    const historial = await db.all(`
+        SELECT * FROM mensajes
+        WHERE (de = ? AND para = ?) OR (de = ? AND para = ?)
+        ORDER BY fecha DESC
+    `, [yo, otro, otro, yo]);
+    res.json(historial);
+});
+
+// --- SOCKET.IO ---
+io.on('connection', (socket) => {
+    console.log('Un usuario conectado');
+
+    socket.on('join', (username) => {
+        socket.join(username);
+        console.log(`${username} se unió a su sala de chat personal.`);
+    });
+
+    socket.on('enviarMensaje', async (msg) => {
+        const { de, para, texto } = msg;
+
+        // Guardar en la base de datos
+        const result = await db.run(
+            `INSERT INTO mensajes (de, para, texto) VALUES (?, ?, ?)`,
+            [de, para, texto]
+        );
+
+        // Emitir el mensaje al destinatario (si está conectado)
+        const nuevoMensaje = {
+            id: result.lastID,
+            de,
+            para,
+            texto,
+            fecha: new Date().toISOString()
+        };
+
+        io.to(para).emit('nuevoMensaje', nuevoMensaje);
+    });
+
+    socket.on('disconnect', () => {
+        console.log('Usuario desconectado');
+    });
+});
+
+server.listen(PORT, () => console.log(`🚀 SYNCRONOS en puerto ${PORT}`));

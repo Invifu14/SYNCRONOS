@@ -8,6 +8,7 @@ import AuthScreen from './screens/AuthScreen';
 import MainScreen from './screens/MainScreen';
 import SuggestionsScreen from './screens/SuggestionsScreen';
 import VaultScreen from './screens/VaultScreen';
+import ChatScreen from './screens/ChatScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createMaterialTopTabNavigator();
@@ -46,7 +47,10 @@ export default function App() {
           {!user ? (
             <Stack.Screen name="Auth" component={AuthScreen} />
           ) : (
-            <Stack.Screen name="HomeTabs" component={HomeTabs} />
+            <>
+              <Stack.Screen name="HomeTabs" component={HomeTabs} />
+              <Stack.Screen name="Chat" component={ChatScreen} options={{ headerShown: true, headerStyle: { backgroundColor: '#0f0f25' }, headerTintColor: '#D4AF37', headerTitleStyle: { fontWeight: 'bold' } }} />
+            </>
           )}
         </Stack.Navigator>
       </NavigationContainer>

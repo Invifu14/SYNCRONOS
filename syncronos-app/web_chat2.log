@@ -1,0 +1,22 @@
+
+> syncronos-app@1.0.0 web
+> expo start --web
+
+Starting project at /app/syncronos-app
+Starting Metro Bundler
+The following packages should be updated for best compatibility with the installed expo version:
+  expo-location@55.1.2 - expected version: ~19.0.8
+  react-native-pager-view@8.0.0 - expected version: 6.9.1
+Your project may not work correctly until you install the expected versions of the packages.
+Waiting on http://localhost:8081
+Logs for your project will appear below.
+Web ./index.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web ./index.js ▓▓▓▓▓▓▓░░░░░░░░░ 48.6% (119/207)
+Web ./index.js ▓▓▓▓▓▓▓░░░░░░░░░ 48.6% (290/456)
+Web ./index.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.0% (578/756)
+Web ./index.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 78.8% ( 895/1008)
+Web Bundled 16934ms index.js (1219 modules)
+ LOG  [web] Logs will appear in the browser console
+Web ./index.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web Bundled 68ms index.js (1 module)
+ LOG  [web] Logs will appear in the browser console

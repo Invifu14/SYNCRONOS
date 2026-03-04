@@ -18,3 +18,39 @@ Web ./index.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
 Web ./index.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
 Web Bundled 1166ms index.js (1 module)
  LOG  [web] Logs will appear in the browser console
+Web ./index.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web Bundling failed 8530ms index.js (1 module)
+Web ./index.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Unable to resolve "./css" from "node_modules/react-native-reanimated/lib/module/index.js"
+[0m [90m 23 |[39m [36mexport[39m { configureReanimatedLogger } [36mfrom[39m [32m'./ConfigHelper'[39m[33m;[39m
+ [90m 24 |[39m [36mexport[39m { enableLayoutAnimations[33m,[39m getViewProp[33m,[39m isConfigured[33m,[39m isReanimated3[33m,[39m makeMutable } [36mfrom[39m [32m'./core'[39m[33m;[39m
+[31m[1m>[22m[39m[90m 25 |[39m [36mexport[39m [33m*[39m [36mfrom[39m [32m'./css'[39m[33m;[39m
+ [90m    |[39m                [31m[1m^[22m[39m
+ [90m 26 |[39m [36mexport[39m { [33mEasing[39m } [36mfrom[39m [32m'./Easing'[39m[33m;[39m
+ [90m 27 |[39m [36mexport[39m { getDynamicFeatureFlag[33m,[39m getStaticFeatureFlag[33m,[39m setDynamicFeatureFlag } [36mfrom[39m [32m'./featureFlags'[39m[33m;[39m
+ [90m 28 |[39m [36mexport[39m { useAnimatedKeyboard[33m,[39m useAnimatedProps[33m,[39m useAnimatedReaction[33m,[39m useAnimatedRef[33m,[39m useAnimatedScrollHandler[33m,[39m useAnimatedSensor[33m,[39m useAnimatedStyle[33m,[39m useComposedEventHandler[33m,[39m useDerivedValue[33m,[39m useEvent[33m,[39m useFrameCallback[33m,[39m useHandler[33m,[39m useReducedMotion[33m,[39m useScrollOffset[33m,[39m [90m/** @deprecated Please use {@link useScrollOffset} instead. */[39m[0m
+
+Import stack:
+
+ node_modules/react-native-reanimated/lib/module/index.js
+ | import "./css"
+
+ node_modules/react-native-gifted-chat/src/MessageImage.tsx
+ | import "react-native-reanimated"
+
+ node_modules/react-native-gifted-chat/src/index.ts
+ | import "./MessageImage"
+
+ screens/ChatScreen.js
+ | import "react-native-gifted-chat"
+
+ App.js
+ | import "./screens/ChatScreen"
+
+ index.js
+ | import "./App"
+
+
+ | import "./index"
+
+Killed
