@@ -78,6 +78,13 @@ export default function SuggestionsScreen() {
                                     <View style={styles.cardInfo}>
                                         <Text style={styles.cardTitle}>{card.nombre}, {calcularEdad(card.fecha_nacimiento)}</Text>
                                         <Text style={styles.cardSigno}>{card.signo_zodiacal} - {card.generacion}</Text>
+
+                                        {card.compatibilidad_porcentaje && (
+                                            <View style={styles.compatibilidadContainer}>
+                                                <Text style={styles.compatibilidadTitle}>✨ {card.compatibilidad_porcentaje}% de Compatibilidad</Text>
+                                                <Text style={styles.compatibilidadText}>{card.compatibilidad_texto}</Text>
+                                            </View>
+                                        )}
                                     </View>
                                 </View>
                             );
@@ -132,4 +139,14 @@ const styles = StyleSheet.create({
     },
     cardTitle: { color: '#fff', fontSize: 26, fontWeight: 'bold' },
     cardSigno: { color: '#D4AF37', fontSize: 16, fontWeight: 'bold', marginTop: 4 },
+    compatibilidadContainer: {
+        marginTop: 12,
+        padding: 10,
+        backgroundColor: 'rgba(212, 175, 55, 0.1)',
+        borderColor: '#D4AF37',
+        borderWidth: 1,
+        borderRadius: 8
+    },
+    compatibilidadTitle: { color: '#D4AF37', fontWeight: 'bold', fontSize: 14 },
+    compatibilidadText: { color: '#ddd', fontSize: 12, marginTop: 4 }
 });

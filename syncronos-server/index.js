@@ -98,6 +98,50 @@ const obtenerSignoYFoto = (fechaStr) => {
     return { signo, foto: `https://robohash.org/${fotoId}.png?set=set4` };
 };
 
+const obtenerElemento = (signo) => {
+    if (!signo) return "";
+    const name = signo.split(" ")[0]; // Quitar emoji
+    if (["Aries", "Leo", "Sagitario"].includes(name)) return "Fuego";
+    if (["Tauro", "Virgo", "Capricornio"].includes(name)) return "Tierra";
+    if (["Géminis", "Libra", "Acuario"].includes(name)) return "Aire";
+    if (["Cáncer", "Escorpio", "Piscis"].includes(name)) return "Agua";
+    return "";
+};
+
+const calcularCompatibilidad = (signo1, signo2) => {
+    const el1 = obtenerElemento(signo1);
+    const el2 = obtenerElemento(signo2);
+
+    // Matriz de compatibilidad simple
+    const matrix = {
+        "Fuego-Fuego": { porc: 85, txt: "Mucha pasión y energía, pero cuidado con el ego." },
+        "Tierra-Tierra": { porc: 90, txt: "Estabilidad pura y objetivos en común." },
+        "Aire-Aire": { porc: 85, txt: "Sintonía mental perfecta, nunca faltará tema." },
+        "Agua-Agua": { porc: 80, txt: "Conexión emocional profunda y empática." },
+
+        "Fuego-Aire": { porc: 95, txt: "El aire aviva el fuego. Inspiración mutua." },
+        "Aire-Fuego": { porc: 95, txt: "El aire aviva el fuego. Inspiración mutua." },
+
+        "Tierra-Agua": { porc: 95, txt: "El agua nutre la tierra. Relación sólida y fértil." },
+        "Agua-Tierra": { porc: 95, txt: "El agua nutre la tierra. Relación sólida y fértil." },
+
+        "Fuego-Tierra": { porc: 60, txt: "Ritmos diferentes: impulso vs. constancia." },
+        "Tierra-Fuego": { porc: 60, txt: "Ritmos diferentes: impulso vs. constancia." },
+
+        "Fuego-Agua": { porc: 50, txt: "Vapor. Apasionado pero puede ser volátil." },
+        "Agua-Fuego": { porc: 50, txt: "Vapor. Apasionado pero puede ser volátil." },
+
+        "Aire-Tierra": { porc: 55, txt: "Ideas vs. Realidad. Requiere esfuerzo para anclar." },
+        "Tierra-Aire": { porc: 55, txt: "Ideas vs. Realidad. Requiere esfuerzo para anclar." },
+
+        "Aire-Agua": { porc: 65, txt: "Razón vs. Emoción. Se complementan si se escuchan." },
+        "Agua-Aire": { porc: 65, txt: "Razón vs. Emoción. Se complementan si se escuchan." },
+    };
+
+    const key = `${el1}-${el2}`;
+    return matrix[key] || { porc: 50, txt: "Misterio astrológico. ¡Descúbranlo juntos!" };
+};
+
 const obtenerGeneracion = (fechaStr) => {
     const año = new Date(fechaStr + "T12:00:00").getFullYear();
     if (año >= 2010) return "Generación Alpha";
@@ -187,6 +231,11 @@ app.get('/usuarios/:nombre', async (req, res) => {
         const dist = calcularDistancia(usuarioActual.latitud, usuarioActual.longitud, u.latitud, u.longitud);
         u.distancia = Math.round(dist); // Agregamos la distancia para poder mostrarla si queremos
         return dist <= 50;
+    }).map(u => {
+        const comp = calcularCompatibilidad(usuarioActual.signo_zodiacal, u.signo_zodiacal);
+        u.compatibilidad_porcentaje = comp.porc;
+        u.compatibilidad_texto = comp.txt;
+        return u;
     });
 
     res.json(resultadosFiltrados);
@@ -221,6 +270,11 @@ app.get('/sugerencias/:nombre', async (req, res) => {
         const dist = calcularDistancia(usuarioActual.latitud, usuarioActual.longitud, u.latitud, u.longitud);
         u.distancia = Math.round(dist);
         return dist <= 50;
+    }).map(u => {
+        const comp = calcularCompatibilidad(usuarioActual.signo_zodiacal, u.signo_zodiacal);
+        u.compatibilidad_porcentaje = comp.porc;
+        u.compatibilidad_texto = comp.txt;
+        return u;
     });
 
     res.json(resultadosFiltrados);
