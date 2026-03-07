@@ -33,7 +33,15 @@ const storage = multer.diskStorage({
         cb(null, Date.now() + path.extname(file.originalname))
     }
 });
-const upload = multer({ storage: storage });
+const fileFilter = (req, file, cb) => {
+    // Aceptar solo imagenes
+    if (file.mimetype.startsWith('image/')) {
+        cb(null, true);
+    } else {
+        cb(new Error('Formato de archivo no soportado, solo se admiten imágenes.'), false);
+    }
+};
+const upload = multer({ storage: storage, fileFilter: fileFilter });
 
 let db;
 (async () => {
@@ -195,7 +203,7 @@ app.post('/registrar-cronos', upload.array('fotos', 6), async (req, res) => {
         fotosArray = req.files.map(f => `/uploads/${f.filename}`);
         fotoPrincipal = fotosArray[0];
     }
-    
+
     const fotosJson = JSON.stringify(fotosArray);
 
     const existing = await db.get(`SELECT * FROM usuarios WHERE nombre = ?`, [nombre]);
