@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext, useCallback } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { GiftedChat, Bubble, Send } from 'react-native-gifted-chat';
 import io from 'socket.io-client';
-import { AppContext } from '../App';
+import { AppContext } from '../context/AppContext';
 
 export default function ChatScreen({ route, navigation }) {
     const { otroUsuario } = route.params;

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useContext, useCallback } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { AppContext } from '../App';
+import { AppContext } from '../context/AppContext';
 
 export default function VaultScreen() {
     const [misConexiones, setMisConexiones] = useState([]);

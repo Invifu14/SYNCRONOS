@@ -1,4 +1,4 @@
-import React, { createContext, useState } from 'react';
+import React, { useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
@@ -9,11 +9,10 @@ import MainScreen from './screens/MainScreen';
 import SuggestionsScreen from './screens/SuggestionsScreen';
 import VaultScreen from './screens/VaultScreen';
 import ChatScreen from './screens/ChatScreen';
+import { AppContext } from './context/AppContext';
 
 const Stack = createNativeStackNavigator();
 const Tab = createMaterialTopTabNavigator();
-
-export const AppContext = createContext();
 
 function HomeTabs() {
   return (

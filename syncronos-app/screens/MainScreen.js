@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useContext } from 'react';
 import { StyleSheet, Text, View, Image, TouchableOpacity, Alert, Dimensions } from 'react-native';
 import Swiper from 'react-native-deck-swiper';
-import { AppContext } from '../App';
+import { AppContext } from '../context/AppContext';
 
 const { height } = Dimensions.get('window');
 
