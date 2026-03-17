@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 
 import AuthScreen from './screens/AuthScreen';
 import MainScreen from './screens/MainScreen';
@@ -11,21 +12,34 @@ import VaultScreen from './screens/VaultScreen';
 import { AppContext } from './context/AppContext';
 
 const Stack = createNativeStackNavigator();
-const Tab = createMaterialTopTabNavigator();
+const Tab = createBottomTabNavigator();
 
 function HomeTabs() {
   return (
     <Tab.Navigator
       initialRouteName="Main"
-      screenOptions={{
-        tabBarStyle: { backgroundColor: '#0f0f25' },
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        tabBarStyle: { backgroundColor: '#0f0f25', borderTopWidth: 0 },
         tabBarActiveTintColor: '#D4AF37',
         tabBarInactiveTintColor: '#666',
-        tabBarIndicatorStyle: { backgroundColor: '#D4AF37' },
-      }}
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName;
+
+          if (route.name === 'Suggestions') {
+            iconName = focused ? 'planet' : 'planet-outline';
+          } else if (route.name === 'Main') {
+            iconName = focused ? 'flame' : 'flame-outline';
+          } else if (route.name === 'Vault') {
+            iconName = focused ? 'lock-closed' : 'lock-closed-outline';
+          }
+
+          return <Ionicons name={iconName} size={size} color={color} />;
+        },
+      })}
     >
       <Tab.Screen name="Suggestions" component={SuggestionsScreen} options={{ title: 'Sugerencias' }} />
-      <Tab.Screen name="Main" component={MainScreen} options={{ title: 'Principal' }} />
+      <Tab.Screen name="Main" component={MainScreen} options={{ title: 'Radar' }} />
       <Tab.Screen name="Vault" component={VaultScreen} options={{ title: 'Bóveda' }} />
     </Tab.Navigator>
   );
