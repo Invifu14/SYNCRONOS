@@ -1,24 +1,36 @@
-import React, { useState } from 'react';
-import { StatusBar } from 'react-native';
+import React, { useContext, useEffect } from 'react';
+import { ActivityIndicator, StatusBar, StyleSheet, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 
 import AuthScreen from './screens/AuthScreen';
 import MainScreen from './screens/MainScreen';
 import SuggestionsScreen from './screens/SuggestionsScreen';
 import VaultScreen from './screens/VaultScreen';
 import ProfileScreen from './screens/ProfileScreen';
-import { AppContext } from './context/AppContext';
+import ChatScreen from './screens/ChatScreen';
+import { AppContext, AppProvider } from './context/AppContext';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+
+const TAB_ICONS = {
+  Radar: { active: 'flame', inactive: 'flame-outline' },
+  Afinidad: { active: 'sparkles', inactive: 'sparkles-outline' },
+  Conexiones: { active: 'chatbubbles', inactive: 'chatbubbles-outline' },
+  Perfil: { active: 'person', inactive: 'person-outline' },
+};
+
+const MI_IP = '192.168.1.113';
+const BASE_URL = MI_IP === 'localhost' ? 'http://localhost:3000' : `http://${MI_IP}:3000`;
 
 function HomeTabs() {
   return (
     <Tab.Navigator
       initialRouteName="Radar"
-      screenOptions={{
+      screenOptions={({ route }) => ({
         headerStyle: { backgroundColor: '#0f0f25' },
         headerTintColor: '#D4AF37',
         headerTitleStyle: { fontWeight: '700' },
@@ -31,36 +43,73 @@ function HomeTabs() {
           paddingTop: 8,
         },
         tabBarLabelStyle: { fontWeight: '600' },
+        tabBarIcon: ({ color, size, focused }) => {
+          const icons = TAB_ICONS[route.name] ?? TAB_ICONS.Radar;
+          return <Ionicons name={focused ? icons.active : icons.inactive} size={size ?? 24} color={color} />;
+        },
         tabBarActiveTintColor: '#D4AF37',
         tabBarInactiveTintColor: '#666',
-      }}
+      })}
     >
-      <Tab.Screen name="Radar" component={MainScreen} options={{ title: 'Radar' }} />
-      <Tab.Screen name="Afinidad" component={SuggestionsScreen} options={{ title: 'Afinidad' }} />
-      <Tab.Screen name="Matches" component={VaultScreen} options={{ title: 'Matches' }} />
-      <Tab.Screen name="Perfil" component={ProfileScreen} options={{ title: 'Perfil' }} />
+      <Tab.Screen name="Radar" component={MainScreen} />
+      <Tab.Screen name="Afinidad" component={SuggestionsScreen} />
+      <Tab.Screen name="Conexiones" component={VaultScreen} />
+      <Tab.Screen name="Perfil" component={ProfileScreen} />
     </Tab.Navigator>
   );
 }
 
-export default function App() {
-  const [user, setUser] = useState(null);
+function AppNavigator() {
+  const { user, restoreSession, sessionReady } = useContext(AppContext);
 
-  // Recuerda poner aqui tu IP si pruebas en movil.
-  const MI_IP = '192.168.1.2';
+  useEffect(() => {
+    restoreSession();
+  }, [restoreSession]);
+
+  if (!sessionReady) {
+    return (
+      <View style={styles.splash}>
+        <ActivityIndicator size="large" color="#D4AF37" />
+      </View>
+    );
+  }
 
   return (
-    <AppContext.Provider value={{ user, setUser, MI_IP }}>
-      <StatusBar barStyle="light-content" backgroundColor="#050510" />
-      <NavigationContainer>
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
-          {!user ? (
-            <Stack.Screen name="Auth" component={AuthScreen} />
-          ) : (
-            <Stack.Screen name="HomeTabs" component={HomeTabs} />
-          )}
-        </Stack.Navigator>
-      </NavigationContainer>
-    </AppContext.Provider>
+    <NavigationContainer>
+      <Stack.Navigator
+        screenOptions={{
+          headerStyle: { backgroundColor: '#0f0f25' },
+          headerTintColor: '#D4AF37',
+          contentStyle: { backgroundColor: '#050510' },
+        }}
+      >
+        {!user ? (
+          <Stack.Screen name="Auth" component={AuthScreen} options={{ headerShown: false }} />
+        ) : (
+          <>
+            <Stack.Screen name="HomeTabs" component={HomeTabs} options={{ headerShown: false }} />
+            <Stack.Screen name="Chat" component={ChatScreen} options={({ route }) => ({ title: route.params?.nombre ?? 'Chat' })} />
+          </>
+        )}
+      </Stack.Navigator>
+    </NavigationContainer>
   );
 }
+
+export default function App() {
+  return (
+    <AppProvider baseUrl={BASE_URL}>
+      <StatusBar barStyle="light-content" backgroundColor="#050510" />
+      <AppNavigator />
+    </AppProvider>
+  );
+}
+
+const styles = StyleSheet.create({
+  splash: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#050510',
+  },
+});

@@ -1,13 +1,19 @@
-import React, { useState, useContext } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import React, { useContext, useState } from 'react';
+import { Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as Location from 'expo-location';
 import { AppContext } from '../context/AppContext';
 
-export default function AuthScreen() {
-  // Posibles estados del flujo
-  const [step, setStep] = useState('method_selection'); 
-  const [metodoRegistro, setMetodoRegistro] = useState('');
+function OptionButton({ active, label, onPress }) {
+  return (
+    <TouchableOpacity style={[styles.optionButton, active && styles.optionButtonActive]} onPress={onPress}>
+      <Text style={[styles.optionText, active && styles.optionTextActive]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
 
+export default function AuthScreen() {
+  const [step, setStep] = useState('method_selection');
+  const [metodoRegistro, setMetodoRegistro] = useState('');
   const [correo, setCorreo] = useState('');
   const [telefono, setTelefono] = useState('');
   const [codigo, setCodigo] = useState('');
@@ -20,295 +26,306 @@ export default function AuthScreen() {
   const [lugarNacimiento, setLugarNacimiento] = useState('');
   const [ubicacion, setUbicacion] = useState('');
   const [gustos, setGustos] = useState('');
-
+  const [bio, setBio] = useState('');
+  const [ocupacion, setOcupacion] = useState('');
+  const [educacion, setEducacion] = useState('');
+  const [fotos, setFotos] = useState(['', '', '']);
+  const [edadMinPref, setEdadMinPref] = useState('18');
+  const [edadMaxPref, setEdadMaxPref] = useState('35');
+  const [distanciaMaxKm, setDistanciaMaxKm] = useState('50');
+  const [mostrarEdad, setMostrarEdad] = useState(true);
+  const [mostrarDistancia, setMostrarDistancia] = useState(true);
+  const [consentimientoUbicacion, setConsentimientoUbicacion] = useState(true);
+  const [perfilActivo, setPerfilActivo] = useState(true);
   const [latitud, setLatitud] = useState(null);
   const [longitud, setLongitud] = useState(null);
-  const [locationErrorMsg, setLocationErrorMsg] = useState(null);
-
-  const { setUser, MI_IP } = useContext(AppContext);
+  const [locationMessage, setLocationMessage] = useState('');
+  const { baseUrl, completeLogin } = useContext(AppContext);
 
   const obtenerUbicacionGPS = async () => {
     let { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
-      setLocationErrorMsg('Permiso de ubicación denegado. Se usará ubicación manual.');
+      setLocationMessage('Permiso de ubicacion denegado. Puedes seguir con ciudad manual.');
       return;
     }
     try {
-      let location = await Location.getCurrentPositionAsync({});
+      const location = await Location.getCurrentPositionAsync({});
       setLatitud(location.coords.latitude);
       setLongitud(location.coords.longitude);
-      setLocationErrorMsg('✅ Ubicación GPS obtenida');
-    } catch(e) {
-      setLocationErrorMsg('Error al obtener GPS');
+      setLocationMessage('Ubicacion GPS lista para filtrar por distancia.');
+    } catch (error) {
+      setLocationMessage('No se pudo obtener la ubicacion GPS.');
     }
-  };
-
-  const registrar = async () => {
-    if (!nombre || !fecha || !intencion || !genero || !generoInteres) {
-        Alert.alert("Error", "Faltan datos obligatorios");
-        return;
-    }
-    
-    try {
-        const url = MI_IP === 'localhost' ? 'http://localhost:3000' : `http://${MI_IP}:3000`;
-        const response = await fetch(`${url}/registrar-cronos`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            nombre,
-            fecha_nacimiento: fecha,
-            hora_nacimiento: horaNacimiento,
-            lugar_nacimiento: lugarNacimiento,
-            ubicacion,
-            gustos,
-            metodo_registro: metodoRegistro,
-            correo: correo,
-            telefono: telefono,
-            intencion: intencion,
-            genero: genero,
-            genero_interes: generoInteres,
-            latitud,
-            longitud
-        }),
-        });
-        const data = await response.json();
-        if (data.mensaje === "OK" || data.mensaje === "Login OK") {
-            const u = data.usuario;
-            // Si hay datos astrológicos avanzados calculados, mostrar un Alert de bienvenida
-            if (u.luna && u.luna !== 'Desconocido' && u.ascendente && u.ascendente !== 'Desconocido') {
-                Alert.alert(
-                    "¡Carta Astral Calculada! 🔮",
-                    `Bienvenido(a) ${u.nombre}.\n\n☀️ Sol: ${u.signo_zodiacal}\n🌙 Luna: ${u.luna}\n⬆️ Ascendente: ${u.ascendente}\n♀️ Venus: ${u.venus}\n♂️ Marte: ${u.marte}\n\n¡Los astros están listos para guiarte!`,
-                    [{ text: "Entrar al Radar", onPress: () => setUser(u) }]
-                );
-            } else {
-                setUser(u);
-            }
-        } else {
-            Alert.alert("Error", "No se pudo establecer identidad");
-        }
-    } catch(e) {
-        console.error(e);
-        Alert.alert("Error", "No se pudo conectar al servidor.");
-    }
-  };
-
-  const seleccionarMetodo = (metodo) => {
-    setMetodoRegistro(metodo);
-    setStep('enter_contact');
   };
 
   const enviarCodigo = () => {
-    if (metodoRegistro === 'correo' && !correo) {
-      Alert.alert("Error", "El correo es obligatorio");
+    if (metodoRegistro === 'correo' && !correo.trim()) {
+      Alert.alert('Error', 'El correo es obligatorio.');
       return;
     }
-    if (metodoRegistro === 'telefono' && !telefono) {
-      Alert.alert("Error", "El número de teléfono es obligatorio");
+    if (metodoRegistro === 'telefono' && !telefono.trim()) {
+      Alert.alert('Error', 'El telefono es obligatorio.');
       return;
     }
-    // Simular el envío del código
-    Alert.alert("Código Enviado", "Se ha enviado un código de verificación (usa 1234 para probar).");
+    Alert.alert('Codigo enviado', 'Se ha enviado un codigo de prueba. Usa 1234 para continuar.');
     setStep('verify_code');
   };
 
   const verificarCodigo = () => {
     if (codigo === '1234') {
-      setStep('enter_name');
-    } else {
-      Alert.alert("Error", "Código incorrecto. Intenta con 1234.");
-    }
-  };
-
-  const irAPasoIntencion = () => {
-    if (!nombre) {
-      Alert.alert("Error", "El nombre es obligatorio");
+      setStep('profile_basics');
       return;
     }
-    setStep('select_intent');
+    Alert.alert('Error', 'Codigo incorrecto. Usa 1234.');
   };
 
-  const seleccionarIntencion = (intencionSeleccionada) => {
-    setIntencion(intencionSeleccionada);
-    setStep('select_gender');
-  };
+  const registrar = async () => {
+    if (!nombre || !fecha || !intencion || !genero || !generoInteres) {
+      Alert.alert('Error', 'Completa los campos obligatorios.');
+      return;
+    }
 
-  const seleccionarGenero = (generoSeleccionado) => {
-    setGenero(generoSeleccionado);
-    setStep('select_interest');
-  };
+    if (Number(edadMinPref) > Number(edadMaxPref)) {
+      Alert.alert('Error', 'El rango de edad no es valido.');
+      return;
+    }
 
-  const seleccionarInteres = (interesSeleccionado) => {
-    setGeneroInteres(interesSeleccionado);
-    setStep('details');
-  };
+    try {
+      const response = await fetch(`${baseUrl}/registrar-cronos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nombre,
+          fecha_nacimiento: fecha,
+          hora_nacimiento: horaNacimiento,
+          lugar_nacimiento: lugarNacimiento,
+          ubicacion,
+          gustos,
+          bio,
+          ocupacion,
+          educacion,
+          fotos,
+          metodo_registro: metodoRegistro,
+          correo,
+          telefono,
+          intencion,
+          genero,
+          genero_interes: generoInteres,
+          latitud,
+          longitud,
+          edad_min_pref: edadMinPref,
+          edad_max_pref: edadMaxPref,
+          distancia_max_km: distanciaMaxKm,
+          mostrar_edad: mostrarEdad,
+          mostrar_distancia: mostrarDistancia,
+          consentimiento_ubicacion: consentimientoUbicacion,
+          perfil_activo: perfilActivo,
+        }),
+      });
 
-  const renderStep = () => {
-    switch (step) {
-      case 'method_selection':
-        return (
-          <View style={styles.card}>
-            <Text style={styles.title}>Elige tu método de registro</Text>
-            <TouchableOpacity style={[styles.button, styles.methodButton]} onPress={() => seleccionarMetodo('correo')}>
-              <Text style={styles.buttonText}>📧  Registrarse con Correo</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.button, styles.methodButton]} onPress={() => seleccionarMetodo('telefono')}>
-              <Text style={styles.buttonText}>📱  Registrarse con Teléfono</Text>
-            </TouchableOpacity>
-          </View>
-        );
-      
-      case 'enter_contact':
-        return (
-          <View style={styles.card}>
-            <TouchableOpacity onPress={() => setStep('method_selection')} style={styles.backButton}>
-              <Text style={styles.backText}>⬅ Volver</Text>
-            </TouchableOpacity>
-            <Text style={styles.title}>
-              {metodoRegistro === 'correo' ? 'Ingresa tu Correo' : 'Ingresa tu Teléfono'}
-            </Text>
-            {metodoRegistro === 'correo' ? (
-              <TextInput style={styles.input} placeholder="Correo Electrónico" placeholderTextColor="#666" onChangeText={setCorreo} keyboardType="email-address" autoCapitalize="none" />
-            ) : (
-              <TextInput style={styles.input} placeholder="Número de Teléfono" placeholderTextColor="#666" onChangeText={setTelefono} keyboardType="phone-pad" />
-            )}
-            <TouchableOpacity style={styles.button} onPress={enviarCodigo}>
-              <Text style={styles.buttonText}>ENVIAR CÓDIGO</Text>
-            </TouchableOpacity>
-          </View>
-        );
+      const data = await response.json();
+      if (!response.ok) {
+        Alert.alert('Error', data.mensaje || 'No se pudo crear tu perfil.');
+        return;
+      }
 
-      case 'verify_code':
-        return (
-          <View style={styles.card}>
-            <TouchableOpacity onPress={() => setStep('enter_contact')} style={styles.backButton}>
-              <Text style={styles.backText}>⬅ Volver</Text>
-            </TouchableOpacity>
-            <Text style={styles.title}>Ingresa el código de verificación</Text>
-            <TextInput style={styles.input} placeholder="Código (ej. 1234)" placeholderTextColor="#666" onChangeText={setCodigo} keyboardType="numeric" />
-            <TouchableOpacity style={styles.button} onPress={verificarCodigo}>
-              <Text style={styles.buttonText}>VERIFICAR</Text>
-            </TouchableOpacity>
-          </View>
-        );
-
-      case 'enter_name':
-        return (
-          <View style={styles.card}>
-            <Text style={styles.title}>¿Cómo te llamas?</Text>
-            <TextInput style={styles.input} placeholder="Tu Nombre para Sincronizar" placeholderTextColor="#666" onChangeText={setNombre} value={nombre} />
-            <TouchableOpacity style={styles.button} onPress={irAPasoIntencion}>
-              <Text style={styles.buttonText}>CONTINUAR</Text>
-            </TouchableOpacity>
-          </View>
-        );
-
-      case 'select_intent':
-        return (
-          <View style={styles.card}>
-            <TouchableOpacity onPress={() => setStep('enter_name')} style={styles.backButton}>
-              <Text style={styles.backText}>⬅ Volver</Text>
-            </TouchableOpacity>
-            <Text style={styles.title}>¿Qué quieres hacer en la app?</Text>
-            <TouchableOpacity style={[styles.button, styles.methodButton]} onPress={() => seleccionarIntencion('Para tener citas')}>
-              <Text style={styles.buttonText}>💘  Para tener citas</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.button, styles.methodButton]} onPress={() => seleccionarIntencion('Para chatear')}>
-              <Text style={styles.buttonText}>💬  Para chatear</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.button, styles.methodButton]} onPress={() => seleccionarIntencion('Para buscar relación')}>
-              <Text style={styles.buttonText}>💍  Para buscar relación</Text>
-            </TouchableOpacity>
-          </View>
-        );
-
-      case 'select_gender':
-        return (
-          <View style={styles.card}>
-            <TouchableOpacity onPress={() => setStep('select_intent')} style={styles.backButton}>
-              <Text style={styles.backText}>⬅ Volver</Text>
-            </TouchableOpacity>
-            <Text style={styles.title}>¿Con qué género te identificas?</Text>
-            <TouchableOpacity style={[styles.button, styles.methodButton]} onPress={() => seleccionarGenero('Hombre')}>
-              <Text style={styles.buttonText}>♂️  Hombre</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.button, styles.methodButton]} onPress={() => seleccionarGenero('Mujer')}>
-              <Text style={styles.buttonText}>♀️  Mujer</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.button, styles.methodButton]} onPress={() => seleccionarGenero('Otro')}>
-              <Text style={styles.buttonText}>⚧️  Otro</Text>
-            </TouchableOpacity>
-          </View>
-        );
-
-      case 'select_interest':
-        return (
-          <View style={styles.card}>
-            <TouchableOpacity onPress={() => setStep('select_gender')} style={styles.backButton}>
-              <Text style={styles.backText}>⬅ Volver</Text>
-            </TouchableOpacity>
-            <Text style={styles.title}>¿Qué te interesa conocer?</Text>
-            <TouchableOpacity style={[styles.button, styles.methodButton]} onPress={() => seleccionarInteres('Hombres')}>
-              <Text style={styles.buttonText}>Hombres</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.button, styles.methodButton]} onPress={() => seleccionarInteres('Mujeres')}>
-              <Text style={styles.buttonText}>Mujeres</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.button, styles.methodButton]} onPress={() => seleccionarInteres('Todos')}>
-              <Text style={styles.buttonText}>Todos</Text>
-            </TouchableOpacity>
-          </View>
-        );
-
-      case 'details':
-        return (
-          <View style={styles.card}>
-            <TouchableOpacity onPress={() => setStep('select_interest')} style={styles.backButton}>
-              <Text style={styles.backText}>⬅ Volver</Text>
-            </TouchableOpacity>
-            <Text style={styles.title}>Completar Identidad</Text>
-            <TextInput style={styles.input} placeholder="Fecha de Nacimiento (AAAA-MM-DD)" placeholderTextColor="#666" onChangeText={setFecha} value={fecha} />
-            <TextInput style={styles.input} placeholder="Hora (HH:MM) - Opcional 🔮" placeholderTextColor="#666" onChangeText={setHoraNacimiento} value={horaNacimiento} />
-            <TextInput style={styles.input} placeholder="Ciudad/País de Nacimiento" placeholderTextColor="#666" onChangeText={setLugarNacimiento} value={lugarNacimiento} />
-
-            <TextInput style={styles.input} placeholder="Ubicación Actual (Ciudad, País)" placeholderTextColor="#666" onChangeText={setUbicacion} value={ubicacion} />
-
-            <TouchableOpacity style={[styles.button, styles.methodButton, {backgroundColor: '#2a2a4a', padding: 12}]} onPress={obtenerUbicacionGPS}>
-              <Text style={[styles.buttonText, {color: '#fff', fontSize: 14}]}>📍 OBTENER MI UBICACIÓN GPS</Text>
-            </TouchableOpacity>
-            {locationErrorMsg && <Text style={{color: '#D4AF37', textAlign: 'center', marginBottom: 10}}>{locationErrorMsg}</Text>}
-
-            <TextInput style={styles.input} placeholder="Tus gustos separados por comas" placeholderTextColor="#666" onChangeText={setGustos} value={gustos} />
-            <TouchableOpacity style={styles.button} onPress={registrar}>
-              <Text style={styles.buttonText}>FINALIZAR REGISTRO</Text>
-            </TouchableOpacity>
-          </View>
-        );
-        
-      default:
-        return null;
+      await completeLogin(data.usuario, data.token);
+    } catch (error) {
+      console.error(error);
+      Alert.alert('Error', 'No se pudo conectar con el servidor.');
     }
   };
 
+  const updatePhoto = (index, value) => {
+    setFotos((current) => current.map((item, position) => (position === index ? value : item)));
+  };
+
+  const renderContactStep = () => (
+    <View style={styles.card}>
+      <Text style={styles.title}>Elige tu metodo de registro</Text>
+      <TouchableOpacity style={styles.primaryButton} onPress={() => { setMetodoRegistro('correo'); setStep('enter_contact'); }}>
+        <Text style={styles.primaryButtonText}>Registrarse con correo</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={[styles.primaryButton, styles.secondaryButton]} onPress={() => { setMetodoRegistro('telefono'); setStep('enter_contact'); }}>
+        <Text style={styles.secondaryButtonText}>Registrarse con telefono</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderEnterContact = () => (
+    <View style={styles.card}>
+      <Text style={styles.title}>{metodoRegistro === 'correo' ? 'Ingresa tu correo' : 'Ingresa tu telefono'}</Text>
+      {metodoRegistro === 'correo' ? (
+        <TextInput style={styles.input} placeholder="correo@ejemplo.com" placeholderTextColor="#666" value={correo} onChangeText={setCorreo} autoCapitalize="none" keyboardType="email-address" />
+      ) : (
+        <TextInput style={styles.input} placeholder="+57 300 123 4567" placeholderTextColor="#666" value={telefono} onChangeText={setTelefono} keyboardType="phone-pad" />
+      )}
+      <TouchableOpacity style={styles.primaryButton} onPress={enviarCodigo}>
+        <Text style={styles.primaryButtonText}>Enviar codigo</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderVerifyCode = () => (
+    <View style={styles.card}>
+      <Text style={styles.title}>Verifica tu codigo</Text>
+      <TextInput style={styles.input} placeholder="1234" placeholderTextColor="#666" value={codigo} onChangeText={setCodigo} keyboardType="numeric" />
+      <TouchableOpacity style={styles.primaryButton} onPress={verificarCodigo}>
+        <Text style={styles.primaryButtonText}>Continuar</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderProfileBasics = () => (
+    <View style={styles.card}>
+      <Text style={styles.title}>Construye tu perfil</Text>
+      <TextInput style={styles.input} placeholder="Nombre" placeholderTextColor="#666" value={nombre} onChangeText={setNombre} />
+      <TextInput style={styles.input} placeholder="Fecha de nacimiento (AAAA-MM-DD)" placeholderTextColor="#666" value={fecha} onChangeText={setFecha} />
+      <TextInput style={styles.input} placeholder="Hora de nacimiento (HH:MM)" placeholderTextColor="#666" value={horaNacimiento} onChangeText={setHoraNacimiento} />
+      <TextInput style={styles.input} placeholder="Lugar de nacimiento" placeholderTextColor="#666" value={lugarNacimiento} onChangeText={setLugarNacimiento} />
+      <TextInput style={styles.input} placeholder="Ciudad actual" placeholderTextColor="#666" value={ubicacion} onChangeText={setUbicacion} />
+      <TextInput style={[styles.input, styles.multiline]} placeholder="Bio corta" placeholderTextColor="#666" value={bio} onChangeText={setBio} multiline />
+      <TextInput style={styles.input} placeholder="Ocupacion" placeholderTextColor="#666" value={ocupacion} onChangeText={setOcupacion} />
+      <TextInput style={styles.input} placeholder="Educacion" placeholderTextColor="#666" value={educacion} onChangeText={setEducacion} />
+      <TextInput style={styles.input} placeholder="Gustos separados por comas" placeholderTextColor="#666" value={gustos} onChangeText={setGustos} />
+      <Text style={styles.sectionLabel}>Tu intencion</Text>
+      <View style={styles.rowWrap}>
+        {['Para tener citas', 'Para chatear', 'Para buscar relacion'].map((item) => (
+          <OptionButton key={item} label={item} active={intencion === item} onPress={() => setIntencion(item)} />
+        ))}
+      </View>
+      <Text style={styles.sectionLabel}>Genero</Text>
+      <View style={styles.rowWrap}>
+        {['Hombre', 'Mujer', 'Otro'].map((item) => (
+          <OptionButton key={item} label={item} active={genero === item} onPress={() => setGenero(item)} />
+        ))}
+      </View>
+      <Text style={styles.sectionLabel}>Te interesa conocer</Text>
+      <View style={styles.rowWrap}>
+        {['Hombres', 'Mujeres', 'Todos'].map((item) => (
+          <OptionButton key={item} label={item} active={generoInteres === item} onPress={() => setGeneroInteres(item)} />
+        ))}
+      </View>
+      <TouchableOpacity style={styles.primaryButton} onPress={() => setStep('details')}>
+        <Text style={styles.primaryButtonText}>Seguir con fotos y filtros</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderDetails = () => (
+    <View style={styles.card}>
+      <Text style={styles.title}>Fotos, filtros y privacidad</Text>
+      {fotos.map((foto, index) => (
+        <TextInput
+          key={`foto-${index}`}
+          style={styles.input}
+          placeholder={`URL de foto ${index + 1}`}
+          placeholderTextColor="#666"
+          value={foto}
+          onChangeText={(value) => updatePhoto(index, value)}
+          autoCapitalize="none"
+        />
+      ))}
+      <View style={styles.inlineInputs}>
+        <TextInput style={[styles.input, styles.compactInput]} placeholder="Edad min" placeholderTextColor="#666" value={edadMinPref} onChangeText={setEdadMinPref} keyboardType="numeric" />
+        <TextInput style={[styles.input, styles.compactInput]} placeholder="Edad max" placeholderTextColor="#666" value={edadMaxPref} onChangeText={setEdadMaxPref} keyboardType="numeric" />
+      </View>
+      <TextInput style={styles.input} placeholder="Distancia maxima en km" placeholderTextColor="#666" value={distanciaMaxKm} onChangeText={setDistanciaMaxKm} keyboardType="numeric" />
+
+      <TouchableOpacity style={[styles.primaryButton, styles.secondaryButton]} onPress={obtenerUbicacionGPS}>
+        <Text style={styles.secondaryButtonText}>Usar mi ubicacion GPS</Text>
+      </TouchableOpacity>
+      {locationMessage ? <Text style={styles.helperText}>{locationMessage}</Text> : null}
+
+      <View style={styles.toggleRow}>
+        <Text style={styles.toggleLabel}>Compartir ubicacion para filtrar por distancia</Text>
+        <Switch value={consentimientoUbicacion} onValueChange={setConsentimientoUbicacion} thumbColor="#D4AF37" trackColor={{ false: '#333', true: '#4a4120' }} />
+      </View>
+      <View style={styles.toggleRow}>
+        <Text style={styles.toggleLabel}>Mostrar edad en tu perfil</Text>
+        <Switch value={mostrarEdad} onValueChange={setMostrarEdad} thumbColor="#D4AF37" trackColor={{ false: '#333', true: '#4a4120' }} />
+      </View>
+      <View style={styles.toggleRow}>
+        <Text style={styles.toggleLabel}>Mostrar distancia a tus matches</Text>
+        <Switch value={mostrarDistancia} onValueChange={setMostrarDistancia} thumbColor="#D4AF37" trackColor={{ false: '#333', true: '#4a4120' }} />
+      </View>
+      <View style={styles.toggleRow}>
+        <Text style={styles.toggleLabel}>Mantener perfil visible</Text>
+        <Switch value={perfilActivo} onValueChange={setPerfilActivo} thumbColor="#D4AF37" trackColor={{ false: '#333', true: '#4a4120' }} />
+      </View>
+
+      <TouchableOpacity style={styles.primaryButton} onPress={registrar}>
+        <Text style={styles.primaryButtonText}>Crear perfil</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ alignItems: 'center', paddingBottom: 50 }}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.logo}>SYNCRONOS</Text>
-      {renderStep()}
+      <Text style={styles.subtitle}>Conexiones guiadas por fecha de nacimiento, afinidad y conversacion real.</Text>
+
+      {step === 'method_selection' && renderContactStep()}
+      {step === 'enter_contact' && renderEnterContact()}
+      {step === 'verify_code' && renderVerifyCode()}
+      {step === 'profile_basics' && renderProfileBasics()}
+      {step === 'details' && renderDetails()}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#050510', paddingHorizontal: 15 },
-  logo: { fontSize: 38, fontWeight: 'bold', color: '#D4AF37', marginTop: 100, marginBottom: 30, textAlign: 'center' },
-  title: { color: '#fff', fontSize: 18, fontWeight: '600', marginBottom: 20, textAlign: 'center' },
-  card: { width: '100%', backgroundColor: '#0f0f25', padding: 20, borderRadius: 20, marginBottom: 20 },
-  input: { backgroundColor: '#050510', color: '#fff', padding: 15, borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: '#1a1a3a' },
-  button: { backgroundColor: '#D4AF37', padding: 18, borderRadius: 12, alignItems: 'center', marginTop: 10 },
-  buttonText: { color: '#050510', fontWeight: 'bold', fontSize: 16 },
-  methodButton: { backgroundColor: '#1a1a3a', marginBottom: 15 },
-  facebookButton: { backgroundColor: '#1877F2', marginBottom: 15 },
-  backButton: { marginBottom: 15 },
-  backText: { color: '#D4AF37', fontWeight: 'bold' },
-  infoText: { color: '#1877F2', marginBottom: 15, textAlign: 'center', fontWeight: 'bold' }
+  container: { flex: 1, backgroundColor: '#050510' },
+  content: { padding: 18, paddingBottom: 48 },
+  logo: { color: '#D4AF37', fontSize: 36, fontWeight: '800', marginTop: 70, textAlign: 'center' },
+  subtitle: { color: '#a0a0b8', marginTop: 10, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
+  card: { backgroundColor: '#0f0f25', borderRadius: 22, padding: 18, borderWidth: 1, borderColor: '#1a1a3a' },
+  title: { color: '#fff', fontSize: 20, fontWeight: '700', marginBottom: 16, textAlign: 'center' },
+  input: {
+    backgroundColor: '#050510',
+    color: '#fff',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#1a1a3a',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 12,
+  },
+  multiline: { minHeight: 92, textAlignVertical: 'top' },
+  primaryButton: {
+    backgroundColor: '#D4AF37',
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  primaryButtonText: { color: '#050510', fontWeight: '800', fontSize: 15 },
+  secondaryButton: { backgroundColor: '#171736', borderWidth: 1, borderColor: '#2a2a4c' },
+  secondaryButtonText: { color: '#fff', fontWeight: '700' },
+  optionButton: {
+    borderWidth: 1,
+    borderColor: '#2a2a4c',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginRight: 10,
+    marginBottom: 10,
+    backgroundColor: '#14142f',
+  },
+  optionButtonActive: { backgroundColor: '#D4AF37', borderColor: '#D4AF37' },
+  optionText: { color: '#d0d0de', fontWeight: '600' },
+  optionTextActive: { color: '#050510' },
+  sectionLabel: { color: '#D4AF37', fontWeight: '700', marginTop: 8, marginBottom: 10 },
+  rowWrap: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 },
+  inlineInputs: { flexDirection: 'row', gap: 10 },
+  compactInput: { flex: 1 },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 8,
+  },
+  toggleLabel: { color: '#fff', flex: 1, lineHeight: 20 },
+  helperText: { color: '#D4AF37', marginBottom: 10 },
 });
