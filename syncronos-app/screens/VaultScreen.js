@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useContext, useCallback } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import React, { useCallback, useContext, useState } from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { AppContext } from '../context/AppContext';
 
@@ -7,46 +7,53 @@ export default function VaultScreen() {
     const [misConexiones, setMisConexiones] = useState([]);
     const { user, MI_IP } = useContext(AppContext);
 
-    const verMisConexiones = async () => {
+    const verMisConexiones = useCallback(async () => {
+        if (!user?.nombre) {
+            setMisConexiones([]);
+            return;
+        }
+
         try {
             const baseUrl = MI_IP === 'localhost' ? 'http://localhost:3000' : `http://${MI_IP}:3000`;
             const response = await fetch(`${baseUrl}/mis-sincronias/${user.nombre}`);
             const data = await response.json();
-            setMisConexiones(data);
-        } catch(e) {
-            console.error("Error al obtener bóveda", e);
+            setMisConexiones(Array.isArray(data) ? data : []);
+        } catch (e) {
+            console.error('Error al obtener matches', e);
+            setMisConexiones([]);
         }
-    };
+    }, [MI_IP, user?.nombre]);
 
     useFocusEffect(
         useCallback(() => {
             verMisConexiones();
-        }, [])
+        }, [verMisConexiones])
     );
 
     return (
-        <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 50 }}>
-            <View style={styles.vaultHeader}>
-                <Text style={styles.vaultTitle}>🔒 TUS SINCRONÍAS GUARDADAS</Text>
+        <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+            <View style={styles.header}>
+                <Text style={styles.headerTitle}>Tus matches y likes</Text>
+                <Text style={styles.headerSubtitle}>Aqui se guardan las conexiones que ya hiciste en Radar y Afinidad.</Text>
             </View>
-            
+
             {misConexiones.length === 0 ? (
-                <Text style={styles.emptyText}>Tu bóveda está vacía.</Text>
+                <Text style={styles.emptyText}>Todavia no tienes conexiones guardadas.</Text>
             ) : (
-                misConexiones.map((con, index) => {
-                    const isMatch = con.tipo === 'match';
+                misConexiones.map((conexion, index) => {
+                    const isMatch = conexion.tipo === 'match';
                     return (
-                        <View key={index} style={[styles.vaultItem, isMatch && styles.matchItem]}>
+                        <View key={`${conexion.usuario_destino}-${index}`} style={[styles.item, isMatch && styles.matchItem]}>
                             {isMatch ? (
-                                <Text style={{color: '#fff', fontSize: 16}}>
-                                    🎉 ¡Tú y <Text style={{color: '#34C759', fontWeight: 'bold'}}>{con.usuario_destino}</Text> se han gustado mutuamente!
+                                <Text style={styles.itemText}>
+                                    Tu y <Text style={styles.matchName}>{conexion.usuario_destino}</Text> se gustaron mutuamente.
                                 </Text>
                             ) : (
-                                <Text style={{color: '#fff', fontSize: 16}}>
-                                    Le has dado Like a <Text style={{color: '#D4AF37', fontWeight: 'bold'}}>{con.usuario_destino}</Text>
+                                <Text style={styles.itemText}>
+                                    Le diste Like a <Text style={styles.likeName}>{conexion.usuario_destino}</Text>
                                 </Text>
                             )}
-                            <Text style={{color: '#888', fontSize: 12, marginTop: 5}}>{con.fecha_sincronia}</Text>
+                            <Text style={styles.itemDate}>{conexion.fecha_sincronia}</Text>
                         </View>
                     );
                 })
@@ -56,10 +63,30 @@ export default function VaultScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#050510', paddingHorizontal: 15, paddingTop: 20 },
-    vaultHeader: { backgroundColor: '#1a1a3a', padding: 15, borderRadius: 10, marginBottom: 20, borderWidth: 1, borderColor: '#444' },
-    vaultTitle: { color: '#D4AF37', fontSize: 14, textAlign: 'center', fontWeight: 'bold' },
-    emptyText: { color: '#666', textAlign: 'center', marginTop: 30, fontSize: 16 },
-    vaultItem: { backgroundColor: '#0f0f25', padding: 15, borderRadius: 10, marginBottom: 10, borderLeftWidth: 3, borderLeftColor: '#D4AF37' },
-    matchItem: { borderLeftColor: '#34C759', backgroundColor: '#1a2a1a' }
+    container: { flex: 1, backgroundColor: '#050510' },
+    content: { padding: 16, paddingBottom: 40 },
+    header: {
+        backgroundColor: '#0f0f25',
+        padding: 18,
+        borderRadius: 18,
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: '#1a1a3a',
+    },
+    headerTitle: { color: '#D4AF37', fontSize: 22, fontWeight: '700', textAlign: 'center' },
+    headerSubtitle: { color: '#aaa', fontSize: 14, textAlign: 'center', marginTop: 8, lineHeight: 20 },
+    emptyText: { color: '#ccc', textAlign: 'center', marginTop: 30, fontSize: 16 },
+    item: {
+        backgroundColor: '#0f0f25',
+        padding: 16,
+        borderRadius: 14,
+        marginBottom: 12,
+        borderLeftWidth: 3,
+        borderLeftColor: '#D4AF37',
+    },
+    matchItem: { borderLeftColor: '#34C759', backgroundColor: '#13251b' },
+    itemText: { color: '#fff', fontSize: 16, lineHeight: 22 },
+    matchName: { color: '#34C759', fontWeight: '700' },
+    likeName: { color: '#D4AF37', fontWeight: '700' },
+    itemDate: { color: '#888', fontSize: 12, marginTop: 8 },
 });

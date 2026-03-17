@@ -1,42 +1,54 @@
 import React, { useState } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 import { StatusBar } from 'react-native';
+import { NavigationContainer } from '@react-navigation/native';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import AuthScreen from './screens/AuthScreen';
 import MainScreen from './screens/MainScreen';
 import SuggestionsScreen from './screens/SuggestionsScreen';
 import VaultScreen from './screens/VaultScreen';
+import ProfileScreen from './screens/ProfileScreen';
 import { AppContext } from './context/AppContext';
 
 const Stack = createNativeStackNavigator();
-const Tab = createMaterialTopTabNavigator();
+const Tab = createBottomTabNavigator();
 
 function HomeTabs() {
   return (
     <Tab.Navigator
-      initialRouteName="Main"
+      initialRouteName="Radar"
       screenOptions={{
-        tabBarStyle: { backgroundColor: '#0f0f25' },
+        headerStyle: { backgroundColor: '#0f0f25' },
+        headerTintColor: '#D4AF37',
+        headerTitleStyle: { fontWeight: '700' },
+        headerShadowVisible: false,
+        tabBarStyle: {
+          backgroundColor: '#0f0f25',
+          borderTopColor: '#1a1a3a',
+          height: 68,
+          paddingBottom: 8,
+          paddingTop: 8,
+        },
+        tabBarLabelStyle: { fontWeight: '600' },
         tabBarActiveTintColor: '#D4AF37',
         tabBarInactiveTintColor: '#666',
-        tabBarIndicatorStyle: { backgroundColor: '#D4AF37' },
       }}
     >
-      <Tab.Screen name="Suggestions" component={SuggestionsScreen} options={{ title: 'Sugerencias' }} />
-      <Tab.Screen name="Main" component={MainScreen} options={{ title: 'Principal' }} />
-      <Tab.Screen name="Vault" component={VaultScreen} options={{ title: 'Bóveda' }} />
+      <Tab.Screen name="Radar" component={MainScreen} options={{ title: 'Radar' }} />
+      <Tab.Screen name="Afinidad" component={SuggestionsScreen} options={{ title: 'Afinidad' }} />
+      <Tab.Screen name="Matches" component={VaultScreen} options={{ title: 'Matches' }} />
+      <Tab.Screen name="Perfil" component={ProfileScreen} options={{ title: 'Perfil' }} />
     </Tab.Navigator>
   );
 }
 
 export default function App() {
   const [user, setUser] = useState(null);
-  
-  // Recuerda poner aquí tu IP si pruebas en móvil (ej. '192.168.1.113')
-  const MI_IP = 'localhost';
-  
+
+  // Recuerda poner aqui tu IP si pruebas en movil.
+  const MI_IP = '192.168.1.2';
+
   return (
     <AppContext.Provider value={{ user, setUser, MI_IP }}>
       <StatusBar barStyle="light-content" backgroundColor="#050510" />
