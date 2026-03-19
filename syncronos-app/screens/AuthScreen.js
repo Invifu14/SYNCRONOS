@@ -1,7 +1,8 @@
 import React, { useContext, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import * as Location from 'expo-location';
 import { AppContext } from '../context/AppContext';
+import AstralPickerModal from '../components/AstralPickerModal';
+import LocationSelectorModal from '../components/LocationSelectorModal';
 
 function OptionButton({ active, label, onPress }) {
   return (
@@ -22,9 +23,17 @@ export default function AuthScreen() {
   const [genero, setGenero] = useState('');
   const [generoInteres, setGeneroInteres] = useState('');
   const [fecha, setFecha] = useState('');
+  const [birthDate, setBirthDate] = useState(new Date(2000, 0, 1));
+  const [showBirthDatePicker, setShowBirthDatePicker] = useState(false);
   const [horaNacimiento, setHoraNacimiento] = useState('');
+  const [birthTime, setBirthTime] = useState(new Date(2000, 0, 1, 12, 0));
+  const [showBirthTimePicker, setShowBirthTimePicker] = useState(false);
   const [lugarNacimiento, setLugarNacimiento] = useState('');
+  const [showBirthPlaceSelector, setShowBirthPlaceSelector] = useState(false);
+  const [latitudNacimiento, setLatitudNacimiento] = useState(null);
+  const [longitudNacimiento, setLongitudNacimiento] = useState(null);
   const [ubicacion, setUbicacion] = useState('');
+  const [showCurrentLocationSelector, setShowCurrentLocationSelector] = useState(false);
   const [gustos, setGustos] = useState('');
   const [bio, setBio] = useState('');
   const [ocupacion, setOcupacion] = useState('');
@@ -42,20 +51,42 @@ export default function AuthScreen() {
   const [locationMessage, setLocationMessage] = useState('');
   const { baseUrl, completeLogin } = useContext(AppContext);
 
-  const obtenerUbicacionGPS = async () => {
-    let { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      setLocationMessage('Permiso de ubicacion denegado. Puedes seguir con ciudad manual.');
-      return;
-    }
-    try {
-      const location = await Location.getCurrentPositionAsync({});
-      setLatitud(location.coords.latitude);
-      setLongitud(location.coords.longitude);
-      setLocationMessage('Ubicacion GPS lista para filtrar por distancia.');
-    } catch (error) {
-      setLocationMessage('No se pudo obtener la ubicacion GPS.');
-    }
+  const formatDate = (date) => {
+    const year = date.getFullYear();
+    const month = `${date.getMonth() + 1}`.padStart(2, '0');
+    const day = `${date.getDate()}`.padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const formatDateLabel = (value) => {
+    if (!value) return 'Selecciona tu fecha de nacimiento';
+    const [year, month, day] = value.split('-');
+    if (!year || !month || !day) return value;
+    return `${day}/${month}/${year}`;
+  };
+
+  const openBirthDatePicker = () => {
+    setShowBirthDatePicker(true);
+  };
+
+  const formatTime = (date) => {
+    const hours = `${date.getHours()}`.padStart(2, '0');
+    const minutes = `${date.getMinutes()}`.padStart(2, '0');
+    return `${hours}:${minutes}`;
+  };
+
+  const formatTimeLabel = (value) => {
+    if (!value) return 'Selecciona tu hora de nacimiento';
+    return value;
+  };
+
+  const formatLocationLabel = (value, placeholder) => {
+    if (!value) return placeholder;
+    return value;
+  };
+
+  const openBirthTimePicker = () => {
+    setShowBirthTimePicker(true);
   };
 
   const enviarCodigo = () => {
@@ -99,6 +130,8 @@ export default function AuthScreen() {
           fecha_nacimiento: fecha,
           hora_nacimiento: horaNacimiento,
           lugar_nacimiento: lugarNacimiento,
+          latitud_nacimiento: latitudNacimiento,
+          longitud_nacimiento: longitudNacimiento,
           ubicacion,
           gustos,
           bio,
@@ -180,10 +213,22 @@ export default function AuthScreen() {
     <View style={styles.card}>
       <Text style={styles.title}>Construye tu perfil</Text>
       <TextInput style={styles.input} placeholder="Nombre" placeholderTextColor="#666" value={nombre} onChangeText={setNombre} />
-      <TextInput style={styles.input} placeholder="Fecha de nacimiento (AAAA-MM-DD)" placeholderTextColor="#666" value={fecha} onChangeText={setFecha} />
-      <TextInput style={styles.input} placeholder="Hora de nacimiento (HH:MM)" placeholderTextColor="#666" value={horaNacimiento} onChangeText={setHoraNacimiento} />
-      <TextInput style={styles.input} placeholder="Lugar de nacimiento" placeholderTextColor="#666" value={lugarNacimiento} onChangeText={setLugarNacimiento} />
-      <TextInput style={styles.input} placeholder="Ciudad actual" placeholderTextColor="#666" value={ubicacion} onChangeText={setUbicacion} />
+      <TouchableOpacity style={styles.dateInput} onPress={openBirthDatePicker} activeOpacity={0.85}>
+        <Text style={fecha ? styles.dateValue : styles.datePlaceholder}>{formatDateLabel(fecha)}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.dateInput} onPress={openBirthTimePicker} activeOpacity={0.85}>
+        <Text style={horaNacimiento ? styles.dateValue : styles.datePlaceholder}>{formatTimeLabel(horaNacimiento)}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.dateInput} onPress={() => setShowBirthPlaceSelector(true)} activeOpacity={0.85}>
+        <Text style={lugarNacimiento ? styles.dateValue : styles.datePlaceholder}>
+          {formatLocationLabel(lugarNacimiento, 'Selecciona tu lugar de nacimiento')}
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.dateInput} onPress={() => setShowCurrentLocationSelector(true)} activeOpacity={0.85}>
+        <Text style={ubicacion ? styles.dateValue : styles.datePlaceholder}>
+          {formatLocationLabel(ubicacion, 'Selecciona tu ciudad actual')}
+        </Text>
+      </TouchableOpacity>
       <TextInput style={[styles.input, styles.multiline]} placeholder="Bio corta" placeholderTextColor="#666" value={bio} onChangeText={setBio} multiline />
       <TextInput style={styles.input} placeholder="Ocupacion" placeholderTextColor="#666" value={ocupacion} onChangeText={setOcupacion} />
       <TextInput style={styles.input} placeholder="Educacion" placeholderTextColor="#666" value={educacion} onChangeText={setEducacion} />
@@ -231,10 +276,6 @@ export default function AuthScreen() {
         <TextInput style={[styles.input, styles.compactInput]} placeholder="Edad max" placeholderTextColor="#666" value={edadMaxPref} onChangeText={setEdadMaxPref} keyboardType="numeric" />
       </View>
       <TextInput style={styles.input} placeholder="Distancia maxima en km" placeholderTextColor="#666" value={distanciaMaxKm} onChangeText={setDistanciaMaxKm} keyboardType="numeric" />
-
-      <TouchableOpacity style={[styles.primaryButton, styles.secondaryButton]} onPress={obtenerUbicacionGPS}>
-        <Text style={styles.secondaryButtonText}>Usar mi ubicacion GPS</Text>
-      </TouchableOpacity>
       {locationMessage ? <Text style={styles.helperText}>{locationMessage}</Text> : null}
 
       <View style={styles.toggleRow}>
@@ -270,6 +311,68 @@ export default function AuthScreen() {
       {step === 'verify_code' && renderVerifyCode()}
       {step === 'profile_basics' && renderProfileBasics()}
       {step === 'details' && renderDetails()}
+
+      <AstralPickerModal
+        visible={showBirthDatePicker}
+        mode="date"
+        value={birthDate}
+        title="Elige tu fecha de nacimiento"
+        helperText="Selecciona el dia exacto que marca tu energia base y tu compatibilidad."
+        onClose={() => setShowBirthDatePicker(false)}
+        onConfirm={(selectedDate) => {
+          setBirthDate(selectedDate);
+          setFecha(formatDate(selectedDate));
+        }}
+      />
+
+      <AstralPickerModal
+        visible={showBirthTimePicker}
+        mode="time"
+        value={birthTime}
+        title="Elige tu hora de nacimiento"
+        helperText="La hora ayuda a calcular con mas precision tu carta y afinidad astral."
+        onClose={() => setShowBirthTimePicker(false)}
+        onConfirm={(selectedTime) => {
+          setBirthTime(selectedTime);
+          setHoraNacimiento(formatTime(selectedTime));
+        }}
+      />
+
+      <LocationSelectorModal
+        visible={showBirthPlaceSelector}
+        title="Elige tu lugar de nacimiento"
+        helperText="Busca y selecciona la ciudad donde naciste para enriquecer tu perfil astral."
+        placeholder="Ejemplo: Medellin, Colombia"
+        currentValue={lugarNacimiento}
+        onClose={() => setShowBirthPlaceSelector(false)}
+        onSelect={(location) => {
+          setLugarNacimiento(location.label);
+          setLatitudNacimiento(location.latitude);
+          setLongitudNacimiento(location.longitude);
+        }}
+      />
+
+      <LocationSelectorModal
+        visible={showCurrentLocationSelector}
+        title="Elige tu ubicacion actual"
+        helperText="Puedes buscar tu ciudad o usar tu ubicacion actual desde la app."
+        placeholder="Ejemplo: Bogota, Colombia"
+        currentValue={ubicacion}
+        allowCurrentLocation
+        currentLocationLabel="Usar mi ubicacion"
+        onClose={() => setShowCurrentLocationSelector(false)}
+        onSelect={(location) => {
+          setUbicacion(location.label);
+          setLatitud(location.latitude);
+          setLongitud(location.longitude);
+          setConsentimientoUbicacion(true);
+          setLocationMessage(
+            location.source === 'current-location'
+              ? 'Ubicacion actual vinculada desde la app.'
+              : 'Ciudad seleccionada para tus filtros por distancia.'
+          );
+        }}
+      />
     </ScrollView>
   );
 }
@@ -291,6 +394,17 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     marginBottom: 12,
   },
+  dateInput: {
+    backgroundColor: '#050510',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#1a1a3a',
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+    marginBottom: 12,
+  },
+  datePlaceholder: { color: '#666' },
+  dateValue: { color: '#fff' },
   multiline: { minHeight: 92, textAlignVertical: 'top' },
   primaryButton: {
     backgroundColor: '#D4AF37',

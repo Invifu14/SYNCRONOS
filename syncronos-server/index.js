@@ -269,6 +269,10 @@ const buildProfilePayload = (body) => {
     const consentimientoUbicacion = sanitizeBoolean(body.consentimiento_ubicacion, false);
     const latitud = consentimientoUbicacion && body.latitud !== null && body.latitud !== undefined ? Number(body.latitud) : null;
     const longitud = consentimientoUbicacion && body.longitud !== null && body.longitud !== undefined ? Number(body.longitud) : null;
+    const latitudNacimiento = body.latitud_nacimiento !== null && body.latitud_nacimiento !== undefined ? Number(body.latitud_nacimiento) : null;
+    const longitudNacimiento = body.longitud_nacimiento !== null && body.longitud_nacimiento !== undefined ? Number(body.longitud_nacimiento) : null;
+    const cartaLatitud = Number.isFinite(latitudNacimiento) ? latitudNacimiento : latitud;
+    const cartaLongitud = Number.isFinite(longitudNacimiento) ? longitudNacimiento : longitud;
 
     let luna = 'Desconocido';
     let ascendente = 'Desconocido';
@@ -276,7 +280,7 @@ const buildProfilePayload = (body) => {
     let marte = 'Desconocido';
 
     if (body.fecha_nacimiento && body.hora_nacimiento) {
-        const carta = calcularCartaAstral(body.fecha_nacimiento, body.hora_nacimiento, latitud, longitud);
+        const carta = calcularCartaAstral(body.fecha_nacimiento, body.hora_nacimiento, cartaLatitud, cartaLongitud);
         luna = carta.luna;
         ascendente = carta.ascendente;
         venus = carta.venus;
@@ -302,6 +306,8 @@ const buildProfilePayload = (body) => {
         longitud,
         hora_nacimiento: `${body.hora_nacimiento || ''}`.trim(),
         lugar_nacimiento: `${body.lugar_nacimiento || ''}`.trim(),
+        latitud_nacimiento: Number.isFinite(latitudNacimiento) ? latitudNacimiento : null,
+        longitud_nacimiento: Number.isFinite(longitudNacimiento) ? longitudNacimiento : null,
         luna,
         ascendente,
         venus,
@@ -360,6 +366,8 @@ const ensureAdult = (fechaNacimiento) => {
             longitud REAL,
             hora_nacimiento TEXT,
             lugar_nacimiento TEXT,
+            latitud_nacimiento REAL,
+            longitud_nacimiento REAL,
             luna TEXT,
             ascendente TEXT,
             venus TEXT,
@@ -424,6 +432,8 @@ const ensureAdult = (fechaNacimiento) => {
         "ALTER TABLE usuarios ADD COLUMN mostrar_distancia INTEGER DEFAULT 1;",
         "ALTER TABLE usuarios ADD COLUMN consentimiento_ubicacion INTEGER DEFAULT 0;",
         "ALTER TABLE usuarios ADD COLUMN perfil_activo INTEGER DEFAULT 1;",
+        "ALTER TABLE usuarios ADD COLUMN latitud_nacimiento REAL;",
+        "ALTER TABLE usuarios ADD COLUMN longitud_nacimiento REAL;",
         "ALTER TABLE sincronias ADD COLUMN tipo TEXT DEFAULT 'like';",
     ];
 
@@ -485,7 +495,7 @@ app.post('/registrar-cronos', async (req, res) => {
                 `UPDATE usuarios
                  SET nombre = ?, fecha_nacimiento = ?, generacion = ?, signo_zodiacal = ?, foto = ?, fotos = ?, ubicacion = ?, gustos = ?,
                      metodo_registro = ?, correo = ?, telefono = ?, intencion = ?, genero = ?, genero_interes = ?, latitud = ?, longitud = ?,
-                     hora_nacimiento = ?, lugar_nacimiento = ?, luna = ?, ascendente = ?, venus = ?, marte = ?, bio = ?, ocupacion = ?,
+                     hora_nacimiento = ?, lugar_nacimiento = ?, latitud_nacimiento = ?, longitud_nacimiento = ?, luna = ?, ascendente = ?, venus = ?, marte = ?, bio = ?, ocupacion = ?,
                      educacion = ?, edad_min_pref = ?, edad_max_pref = ?, distancia_max_km = ?, mostrar_edad = ?, mostrar_distancia = ?,
                      consentimiento_ubicacion = ?, perfil_activo = ?, ultima_sesion = CURRENT_TIMESTAMP
                  WHERE id = ?`,
@@ -493,6 +503,7 @@ app.post('/registrar-cronos', async (req, res) => {
                     profile.nombre, profile.fecha_nacimiento, profile.generacion, profile.signo_zodiacal, profile.foto, profile.fotos,
                     profile.ubicacion, profile.gustos, profile.metodo_registro, profile.correo, profile.telefono, profile.intencion,
                     profile.genero, profile.genero_interes, profile.latitud, profile.longitud, profile.hora_nacimiento, profile.lugar_nacimiento,
+                    profile.latitud_nacimiento, profile.longitud_nacimiento,
                     profile.luna, profile.ascendente, profile.venus, profile.marte, profile.bio, profile.ocupacion, profile.educacion,
                     profile.edad_min_pref, profile.edad_max_pref, profile.distancia_max_km, profile.mostrar_edad, profile.mostrar_distancia,
                     profile.consentimiento_ubicacion, profile.perfil_activo, existing.id,
@@ -506,14 +517,15 @@ app.post('/registrar-cronos', async (req, res) => {
         const insertResult = await db.run(
             `INSERT INTO usuarios (
                 nombre, fecha_nacimiento, generacion, signo_zodiacal, foto, fotos, ubicacion, gustos, metodo_registro, correo, telefono,
-                intencion, genero, genero_interes, latitud, longitud, hora_nacimiento, lugar_nacimiento, luna, ascendente, venus, marte,
+                intencion, genero, genero_interes, latitud, longitud, hora_nacimiento, lugar_nacimiento, latitud_nacimiento, longitud_nacimiento, luna, ascendente, venus, marte,
                 bio, ocupacion, educacion, edad_min_pref, edad_max_pref, distancia_max_km, mostrar_edad, mostrar_distancia,
                 consentimiento_ubicacion, perfil_activo, ultima_sesion
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
             [
                 profile.nombre, profile.fecha_nacimiento, profile.generacion, profile.signo_zodiacal, profile.foto, profile.fotos,
                 profile.ubicacion, profile.gustos, profile.metodo_registro, profile.correo, profile.telefono, profile.intencion,
                 profile.genero, profile.genero_interes, profile.latitud, profile.longitud, profile.hora_nacimiento, profile.lugar_nacimiento,
+                profile.latitud_nacimiento, profile.longitud_nacimiento,
                 profile.luna, profile.ascendente, profile.venus, profile.marte, profile.bio, profile.ocupacion, profile.educacion,
                 profile.edad_min_pref, profile.edad_max_pref, profile.distancia_max_km, profile.mostrar_edad, profile.mostrar_distancia,
                 profile.consentimiento_ubicacion, profile.perfil_activo,
@@ -585,7 +597,7 @@ app.put('/perfil/:id', async (req, res) => {
             `UPDATE usuarios
              SET nombre = ?, fecha_nacimiento = ?, generacion = ?, signo_zodiacal = ?, foto = ?, fotos = ?, ubicacion = ?, gustos = ?,
                  metodo_registro = ?, correo = ?, telefono = ?, intencion = ?, genero = ?, genero_interes = ?, latitud = ?, longitud = ?,
-                 hora_nacimiento = ?, lugar_nacimiento = ?, luna = ?, ascendente = ?, venus = ?, marte = ?, bio = ?, ocupacion = ?,
+                 hora_nacimiento = ?, lugar_nacimiento = ?, latitud_nacimiento = ?, longitud_nacimiento = ?, luna = ?, ascendente = ?, venus = ?, marte = ?, bio = ?, ocupacion = ?,
                  educacion = ?, edad_min_pref = ?, edad_max_pref = ?, distancia_max_km = ?, mostrar_edad = ?, mostrar_distancia = ?,
                  consentimiento_ubicacion = ?, perfil_activo = ?, ultima_sesion = CURRENT_TIMESTAMP
              WHERE id = ?`,
@@ -593,6 +605,7 @@ app.put('/perfil/:id', async (req, res) => {
                 profile.nombre, profile.fecha_nacimiento, profile.generacion, profile.signo_zodiacal, profile.foto, profile.fotos,
                 profile.ubicacion, profile.gustos, profile.metodo_registro, profile.correo, profile.telefono, profile.intencion,
                 profile.genero, profile.genero_interes, profile.latitud, profile.longitud, profile.hora_nacimiento, profile.lugar_nacimiento,
+                profile.latitud_nacimiento, profile.longitud_nacimiento,
                 profile.luna, profile.ascendente, profile.venus, profile.marte, profile.bio, profile.ocupacion, profile.educacion,
                 profile.edad_min_pref, profile.edad_max_pref, profile.distancia_max_km, profile.mostrar_edad, profile.mostrar_distancia,
                 profile.consentimiento_ubicacion, profile.perfil_activo, req.params.id,

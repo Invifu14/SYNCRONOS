@@ -1,14 +1,24 @@
 import React, { useContext, useEffect, useState } from 'react';
 import { Alert, Image, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { AppContext } from '../context/AppContext';
+import AstralPickerModal from '../components/AstralPickerModal';
+import LocationSelectorModal from '../components/LocationSelectorModal';
 
 export default function ProfileScreen() {
   const { user, baseUrl, setUser, refreshUser, logout } = useContext(AppContext);
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [birthDate, setBirthDate] = useState(new Date(2000, 0, 1));
+  const [showBirthDatePicker, setShowBirthDatePicker] = useState(false);
+  const [birthTime, setBirthTime] = useState(new Date(2000, 0, 1, 12, 0));
+  const [showBirthTimePicker, setShowBirthTimePicker] = useState(false);
+  const [showBirthPlaceSelector, setShowBirthPlaceSelector] = useState(false);
+  const [showCurrentLocationSelector, setShowCurrentLocationSelector] = useState(false);
 
   useEffect(() => {
     if (user) {
+      const parsedBirthDate = user.fecha_nacimiento ? new Date(`${user.fecha_nacimiento}T12:00:00`) : new Date(2000, 0, 1);
+      const parsedBirthTime = user.hora_nacimiento ? new Date(`2000-01-01T${user.hora_nacimiento}:00`) : new Date(2000, 0, 1, 12, 0);
       setDraft({
         ...user,
         fotos: [...(user.fotos || ['', '', '']), '', ''].slice(0, 3),
@@ -16,6 +26,8 @@ export default function ProfileScreen() {
         edad_max_pref: `${user.edad_max_pref ?? 99}`,
         distancia_max_km: `${user.distancia_max_km ?? 50}`,
       });
+      setBirthDate(Number.isNaN(parsedBirthDate.getTime()) ? new Date(2000, 0, 1) : parsedBirthDate);
+      setBirthTime(Number.isNaN(parsedBirthTime.getTime()) ? new Date(2000, 0, 1, 12, 0) : parsedBirthTime);
     }
   }, [user]);
 
@@ -32,6 +44,44 @@ export default function ProfileScreen() {
       ...current,
       fotos: current.fotos.map((item, position) => (position === index ? value : item)),
     }));
+  };
+
+  const formatDate = (date) => {
+    const year = date.getFullYear();
+    const month = `${date.getMonth() + 1}`.padStart(2, '0');
+    const day = `${date.getDate()}`.padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const formatDateLabel = (value) => {
+    if (!value) return 'Selecciona tu fecha de nacimiento';
+    const [year, month, day] = value.split('-');
+    if (!year || !month || !day) return value;
+    return `${day}/${month}/${year}`;
+  };
+
+  const formatTime = (date) => {
+    const hours = `${date.getHours()}`.padStart(2, '0');
+    const minutes = `${date.getMinutes()}`.padStart(2, '0');
+    return `${hours}:${minutes}`;
+  };
+
+  const formatTimeLabel = (value) => {
+    if (!value) return 'Selecciona tu hora de nacimiento';
+    return value;
+  };
+
+  const formatLocationLabel = (value, placeholder) => {
+    if (!value) return placeholder;
+    return value;
+  };
+
+  const openBirthDatePicker = () => {
+    setShowBirthDatePicker(true);
+  };
+
+  const openBirthTimePicker = () => {
+    setShowBirthTimePicker(true);
   };
 
   const saveProfile = async () => {
@@ -78,11 +128,26 @@ export default function ProfileScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Identidad y perfil publico</Text>
         <TextInput style={styles.input} value={draft.nombre} onChangeText={(value) => updateField('nombre', value)} placeholder="Nombre" placeholderTextColor="#666" />
+        <TouchableOpacity style={styles.dateInput} onPress={openBirthDatePicker} activeOpacity={0.85}>
+          <Text style={draft.fecha_nacimiento ? styles.dateValue : styles.datePlaceholder}>{formatDateLabel(draft.fecha_nacimiento)}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.dateInput} onPress={openBirthTimePicker} activeOpacity={0.85}>
+          <Text style={draft.hora_nacimiento ? styles.dateValue : styles.datePlaceholder}>{formatTimeLabel(draft.hora_nacimiento)}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.dateInput} onPress={() => setShowBirthPlaceSelector(true)} activeOpacity={0.85}>
+          <Text style={draft.lugar_nacimiento ? styles.dateValue : styles.datePlaceholder}>
+            {formatLocationLabel(draft.lugar_nacimiento, 'Selecciona tu lugar de nacimiento')}
+          </Text>
+        </TouchableOpacity>
         <TextInput style={styles.input} value={draft.bio} onChangeText={(value) => updateField('bio', value)} placeholder="Bio" placeholderTextColor="#666" multiline />
         <TextInput style={styles.input} value={draft.ocupacion} onChangeText={(value) => updateField('ocupacion', value)} placeholder="Ocupacion" placeholderTextColor="#666" />
         <TextInput style={styles.input} value={draft.educacion} onChangeText={(value) => updateField('educacion', value)} placeholder="Educacion" placeholderTextColor="#666" />
         <TextInput style={styles.input} value={draft.gustos} onChangeText={(value) => updateField('gustos', value)} placeholder="Gustos" placeholderTextColor="#666" />
-        <TextInput style={styles.input} value={draft.ubicacion} onChangeText={(value) => updateField('ubicacion', value)} placeholder="Ciudad" placeholderTextColor="#666" />
+        <TouchableOpacity style={styles.dateInput} onPress={() => setShowCurrentLocationSelector(true)} activeOpacity={0.85}>
+          <Text style={draft.ubicacion ? styles.dateValue : styles.datePlaceholder}>
+            {formatLocationLabel(draft.ubicacion, 'Selecciona tu ciudad actual')}
+          </Text>
+        </TouchableOpacity>
         {draft.fotos.map((foto, index) => (
           <TextInput
             key={`foto-profile-${index}`}
@@ -136,6 +201,63 @@ export default function ProfileScreen() {
       <TouchableOpacity style={styles.logoutButton} onPress={logout}>
         <Text style={styles.logoutText}>Cerrar sesion</Text>
       </TouchableOpacity>
+
+      <AstralPickerModal
+        visible={showBirthDatePicker}
+        mode="date"
+        value={birthDate}
+        title="Actualiza tu fecha de nacimiento"
+        helperText="Ajusta la fecha para mantener correctos tu carta astral y tus calculos de afinidad."
+        onClose={() => setShowBirthDatePicker(false)}
+        onConfirm={(selectedDate) => {
+          setBirthDate(selectedDate);
+          updateField('fecha_nacimiento', formatDate(selectedDate));
+        }}
+      />
+
+      <AstralPickerModal
+        visible={showBirthTimePicker}
+        mode="time"
+        value={birthTime}
+        title="Actualiza tu hora de nacimiento"
+        helperText="La hora precisa mejora la lectura de luna, ascendente, Venus y Marte."
+        onClose={() => setShowBirthTimePicker(false)}
+        onConfirm={(selectedTime) => {
+          setBirthTime(selectedTime);
+          updateField('hora_nacimiento', formatTime(selectedTime));
+        }}
+      />
+
+      <LocationSelectorModal
+        visible={showBirthPlaceSelector}
+        title="Actualiza tu lugar de nacimiento"
+        helperText="Selecciona la ciudad que mejor represente tu origen para refinar tu perfil astral."
+        placeholder="Ejemplo: Cali, Colombia"
+        currentValue={draft.lugar_nacimiento}
+        onClose={() => setShowBirthPlaceSelector(false)}
+        onSelect={(location) => {
+          updateField('lugar_nacimiento', location.label);
+          updateField('latitud_nacimiento', location.latitude);
+          updateField('longitud_nacimiento', location.longitude);
+        }}
+      />
+
+      <LocationSelectorModal
+        visible={showCurrentLocationSelector}
+        title="Actualiza tu ubicacion actual"
+        helperText="Usa tu ubicacion real o elige una ciudad para tus filtros por distancia."
+        placeholder="Ejemplo: Bogota, Colombia"
+        currentValue={draft.ubicacion}
+        allowCurrentLocation
+        currentLocationLabel="Usar mi ubicacion"
+        onClose={() => setShowCurrentLocationSelector(false)}
+        onSelect={(location) => {
+          updateField('ubicacion', location.label);
+          updateField('latitud', location.latitude);
+          updateField('longitud', location.longitude);
+          updateField('consentimiento_ubicacion', true);
+        }}
+      />
     </ScrollView>
   );
 }
@@ -174,6 +296,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#1a1a3a',
   },
+  dateInput: {
+    backgroundColor: '#050510',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1a1a3a',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 12,
+  },
+  datePlaceholder: { color: '#666' },
+  dateValue: { color: '#fff' },
   inlineRow: { flexDirection: 'row', gap: 10 },
   halfInput: { flex: 1 },
   toggleRow: {
