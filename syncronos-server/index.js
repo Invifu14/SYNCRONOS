@@ -1,15 +1,37 @@
 const crypto = require('crypto');
 const cors = require('cors');
 const express = require('express');
+const fs = require('fs');
+const http = require('http');
+const multer = require('multer');
+const path = require('path');
 const sqlite3 = require('sqlite3');
+const { Expo } = require('expo-server-sdk');
+const { Server } = require('socket.io');
 const { open } = require('sqlite');
 const { calcularCartaAstral, zodiacSigns } = require('./astrology');
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: {
+        origin: '*',
+        methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    },
+});
+const expo = new Expo();
 const PORT = 3000;
+const MAX_PHOTOS_PER_PROFILE = 3;
+const MAX_PHOTO_SIZE_BYTES = 8 * 1024 * 1024;
+const PHOTO_REPORT_HIDE_THRESHOLD = 3;
+const UPLOADS_DIR = path.join(__dirname, 'uploads');
+const PROFILE_UPLOADS_DIR = path.join(UPLOADS_DIR, 'profile-photos');
 
-app.use(express.json());
+fs.mkdirSync(PROFILE_UPLOADS_DIR, { recursive: true });
+
+app.use(express.json({ limit: '2mb' }));
 app.use(cors());
+app.use('/uploads', express.static(UPLOADS_DIR));
 
 const zodiacElements = Object.fromEntries(zodiacSigns.map((sign) => [sign.name, sign.element]));
 const compatibleElements = {
@@ -19,8 +41,42 @@ const compatibleElements = {
     Agua: ['Tierra', 'Agua'],
 };
 const ALLOWED_MODERATION_ACTIONS = new Set(['block', 'hide', 'report']);
+const ALLOWED_PHOTO_MIME_TYPES = new Set([
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/webp',
+    'image/heic',
+    'image/heif',
+]);
+const connectedUserSockets = new Map();
+const activeChatsBySocket = new Map();
 
 let db;
+
+const photoStorage = multer.diskStorage({
+    destination: (_req, _file, callback) => {
+        callback(null, PROFILE_UPLOADS_DIR);
+    },
+    filename: (_req, file, callback) => {
+        const extension = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+        callback(null, `${Date.now()}-${crypto.randomUUID()}${extension}`);
+    },
+});
+
+const photoUpload = multer({
+    storage: photoStorage,
+    limits: {
+        fileSize: MAX_PHOTO_SIZE_BYTES,
+    },
+    fileFilter: (_req, file, callback) => {
+        if (!ALLOWED_PHOTO_MIME_TYPES.has(file.mimetype)) {
+            callback(new Error('PHOTO_TYPE_INVALID'));
+            return;
+        }
+        callback(null, true);
+    },
+});
 
 const hasColumn = async (tableName, columnName) => {
     const columns = await db.all(`PRAGMA table_info(${tableName})`);
@@ -60,8 +116,9 @@ const sanitizeInteger = (value, fallback) => {
 
 const sanitizeBoolean = (value, fallback = false) => {
     if (typeof value === 'boolean') return value;
-    if (value === 'true') return true;
-    if (value === 'false') return false;
+    if (typeof value === 'number') return value === 1;
+    if (value === 'true' || value === '1') return true;
+    if (value === 'false' || value === '0') return false;
     return fallback;
 };
 
@@ -209,11 +266,33 @@ const calculateCompatibility = (userA, userB) => {
     };
 };
 
-const toPublicUser = (user, extras = {}) => {
+const normalizePhotoInput = (body) => {
+    const arrayPhotos = Array.isArray(body.fotos) ? body.fotos : parseJsonArray(body.fotos);
+    return uniqueStrings([
+        ...arrayPhotos,
+        body.foto,
+        body.foto_1,
+        body.foto_2,
+        body.foto_3,
+    ]).slice(0, MAX_PHOTOS_PER_PROFILE);
+};
+
+const getModeratedPhotoList = (user) => uniqueStrings(parseJsonArray(user?.fotos_moderadas));
+
+const buildUserPayload = (
+    user,
+    extras = {},
+    {
+        includePrivateContact = false,
+        includeModeratedPhotos = false,
+    } = {}
+) => {
     if (!user) return null;
 
-    const photos = uniqueStrings(parseJsonArray(user.fotos));
-    const publicPhotos = photos.length > 0 ? photos : [user.foto || null].filter(Boolean);
+    const allPhotos = uniqueStrings(parseJsonArray(user.fotos));
+    const moderatedPhotos = getModeratedPhotoList(user);
+    const visiblePhotos = allPhotos.filter((photo) => !moderatedPhotos.includes(photo));
+    const selectedPhotos = includeModeratedPhotos ? allPhotos : visiblePhotos;
     const age = calculateAge(user.fecha_nacimiento);
 
     return {
@@ -223,13 +302,15 @@ const toPublicUser = (user, extras = {}) => {
         edad: age,
         generacion: user.generacion,
         signo_zodiacal: user.signo_zodiacal,
-        foto: publicPhotos[0] || null,
-        fotos: publicPhotos,
+        foto: selectedPhotos[0] || visiblePhotos[0] || null,
+        fotos: selectedPhotos,
+        fotos_visibles: visiblePhotos,
+        fotos_moderadas: includeModeratedPhotos ? moderatedPhotos : [],
         ubicacion: user.ubicacion || '',
         gustos: user.gustos || '',
         metodo_registro: user.metodo_registro || '',
-        correo: user.correo || '',
-        telefono: user.telefono || '',
+        correo: includePrivateContact ? user.correo || '' : '',
+        telefono: includePrivateContact ? user.telefono || '' : '',
         intencion: user.intencion || '',
         genero: user.genero || '',
         genero_interes: user.genero_interes || '',
@@ -249,22 +330,20 @@ const toPublicUser = (user, extras = {}) => {
         mostrar_distancia: sanitizeBoolean(user.mostrar_distancia, true),
         consentimiento_ubicacion: sanitizeBoolean(user.consentimiento_ubicacion, false),
         perfil_activo: sanitizeBoolean(user.perfil_activo, true),
+        push_token: includePrivateContact ? user.push_token || '' : '',
         compatibilidad: extras.compatibilidad ?? null,
         razon_compatibilidad: extras.razon_compatibilidad ?? [],
         distancia: extras.distancia ?? null,
     };
 };
 
+const toPublicUser = (user, extras = {}) => buildUserPayload(user, extras);
+const toOwnUser = (user, extras = {}) => buildUserPayload(user, extras, { includePrivateContact: true, includeModeratedPhotos: true });
+
 const buildProfilePayload = (body) => {
     const birthInfo = obtenerSignoYFoto(body.fecha_nacimiento);
     const generacion = obtenerGeneracion(body.fecha_nacimiento);
-    const rawPhotos = uniqueStrings([
-        ...(Array.isArray(body.fotos) ? body.fotos : []),
-        body.foto,
-        body.foto_1,
-        body.foto_2,
-        body.foto_3,
-    ]);
+    const rawPhotos = normalizePhotoInput(body);
     const fotos = rawPhotos.length > 0 ? rawPhotos : [birthInfo.fotoFallback];
     const consentimientoUbicacion = sanitizeBoolean(body.consentimiento_ubicacion, false);
     const latitud = consentimientoUbicacion && body.latitud !== null && body.latitud !== undefined ? Number(body.latitud) : null;
@@ -325,13 +404,18 @@ const buildProfilePayload = (body) => {
     };
 };
 
+const getRetainedModeratedPhotos = (currentUser, nextPhotos) => {
+    const retained = getModeratedPhotoList(currentUser).filter((photo) => nextPhotos.includes(photo));
+    return JSON.stringify(retained);
+};
+
 const withSession = async (user) => {
     const token = crypto.randomUUID();
     await db.run(
         `INSERT INTO sesiones (token, usuario_id, created_at, last_seen_at) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
         [token, user.id]
     );
-    return { token, usuario: toPublicUser(user) };
+    return { token, usuario: toOwnUser(user) };
 };
 
 const ensureAdult = (fechaNacimiento) => {
@@ -339,9 +423,163 @@ const ensureAdult = (fechaNacimiento) => {
     return age !== null && age >= 18;
 };
 
+const getBaseUrlForRequest = (req) => `${req.protocol}://${req.get('host')}`;
+
+const createUploadUrl = (req, filename) => `${getBaseUrlForRequest(req)}/uploads/profile-photos/${filename}`;
+
+const getAuthTokenFromRequest = (req) => {
+    const headerToken = req.get('x-session-token');
+    if (headerToken) return headerToken;
+
+    const authorization = req.get('authorization');
+    if (!authorization) return null;
+
+    const [scheme, token] = authorization.split(' ');
+    if (scheme?.toLowerCase() === 'bearer' && token) return token;
+    return null;
+};
+
+const getSessionRecord = async (token) => {
+    if (!token) return null;
+    return db.get(
+        `SELECT s.token, u.* FROM sesiones s JOIN usuarios u ON u.id = s.usuario_id WHERE s.token = ?`,
+        [token]
+    );
+};
+
+const maybeAttachSessionUser = async (req) => {
+    const token = getAuthTokenFromRequest(req);
+    if (!token) return null;
+    const sessionUser = await getSessionRecord(token);
+    if (sessionUser) {
+        req.sessionToken = token;
+        req.sessionUser = sessionUser;
+    }
+    return sessionUser;
+};
+
+const requireSession = async (req, res, next) => {
+    try {
+        const sessionUser = await maybeAttachSessionUser(req);
+        if (!sessionUser) {
+            return res.status(401).json({ mensaje: 'Sesion invalida o expirada' });
+        }
+        next();
+    } catch (error) {
+        next(error);
+    }
+};
+
+const requireOwnUser = (req, res, next) => {
+    const expectedId = Number(req.params.id);
+    if (!req.sessionUser || req.sessionUser.id !== expectedId) {
+        return res.status(403).json({ mensaje: 'No puedes modificar este recurso' });
+    }
+    next();
+};
+
+const registerConnectedSocket = (userId, socketId) => {
+    const currentSet = connectedUserSockets.get(userId) ?? new Set();
+    currentSet.add(socketId);
+    connectedUserSockets.set(userId, currentSet);
+};
+
+const unregisterConnectedSocket = (userId, socketId) => {
+    const currentSet = connectedUserSockets.get(userId);
+    if (!currentSet) return;
+    currentSet.delete(socketId);
+    if (currentSet.size === 0) {
+        connectedUserSockets.delete(userId);
+    }
+};
+
+const isUserActiveInChat = (userId, otherUserId) => {
+    for (const [socketId, activity] of activeChatsBySocket.entries()) {
+        if (activity.userId === userId && activity.otherUserId === otherUserId) {
+            const sockets = connectedUserSockets.get(userId);
+            if (sockets?.has(socketId)) {
+                return true;
+            }
+        }
+    }
+    return false;
+};
+
+const canUsersChat = async (userId, otherUserId) => {
+    const hasMatch = await db.get(
+        `SELECT 1 FROM sincronias
+         WHERE ((usuario_origen = ? AND usuario_destino = ?) OR (usuario_origen = ? AND usuario_destino = ?))
+         AND tipo = 'match'
+         LIMIT 1`,
+        [userId, otherUserId, otherUserId, userId]
+    );
+    return Boolean(hasMatch);
+};
+
+const emitConnectionsRefresh = (firstUserId, secondUserId) => {
+    io.to(`user:${firstUserId}`).emit('connections:refresh', { userId: firstUserId, otherUserId: secondUserId });
+    io.to(`user:${secondUserId}`).emit('connections:refresh', { userId: secondUserId, otherUserId: firstUserId });
+};
+
+const markConversationAsRead = async (userId, otherUserId) => {
+    const chatKey = pairKey(userId, otherUserId);
+    await db.run(
+        `UPDATE mensajes SET leido = 1 WHERE chat_key = ? AND receptor_id = ?`,
+        [chatKey, userId]
+    );
+    io.to(`chat:${chatKey}`).emit('chat:read', { chatKey, readerId: userId, otherUserId });
+    emitConnectionsRefresh(userId, otherUserId);
+};
+
+const emitMessageRealtime = async (message) => {
+    io.to(`chat:${message.chat_key}`).emit('chat:message', message);
+    emitConnectionsRefresh(message.emisor_id, message.receptor_id);
+};
+
+const sendPushToUser = async ({ pushToken, title, body, data }) => {
+    if (!pushToken || !Expo.isExpoPushToken(pushToken)) return;
+
+    const chunks = expo.chunkPushNotifications([{
+        to: pushToken,
+        sound: 'default',
+        title,
+        body,
+        data,
+        channelId: 'messages',
+    }]);
+
+    for (const chunk of chunks) {
+        try {
+            await expo.sendPushNotificationsAsync(chunk);
+        } catch (error) {
+            console.error('No se pudo enviar la notificacion push:', error);
+        }
+    }
+};
+
+const notifyRecipientIfNeeded = async (message) => {
+    if (isUserActiveInChat(message.receptor_id, message.emisor_id)) return;
+
+    const [sender, receiver] = await Promise.all([
+        db.get(`SELECT nombre FROM usuarios WHERE id = ?`, [message.emisor_id]),
+        db.get(`SELECT push_token FROM usuarios WHERE id = ?`, [message.receptor_id]),
+    ]);
+
+    await sendPushToUser({
+        pushToken: receiver?.push_token,
+        title: sender?.nombre ? `Nuevo mensaje de ${sender.nombre}` : 'Nuevo mensaje en SYNCRONOS',
+        body: `${message.contenido}`.slice(0, 140),
+        data: {
+            screen: 'Chat',
+            otherUserId: message.emisor_id,
+            nombre: sender?.nombre || 'Chat',
+        },
+    });
+};
+
 (async () => {
     db = await open({
-        filename: './database.db',
+        filename: path.join(__dirname, 'database.db'),
         driver: sqlite3.Database,
     });
 
@@ -354,6 +592,7 @@ const ensureAdult = (fechaNacimiento) => {
             signo_zodiacal TEXT,
             foto TEXT,
             fotos TEXT DEFAULT '[]',
+            fotos_moderadas TEXT DEFAULT '[]',
             ubicacion TEXT,
             gustos TEXT,
             metodo_registro TEXT,
@@ -382,6 +621,7 @@ const ensureAdult = (fechaNacimiento) => {
             mostrar_distancia INTEGER DEFAULT 1,
             consentimiento_ubicacion INTEGER DEFAULT 0,
             perfil_activo INTEGER DEFAULT 1,
+            push_token TEXT DEFAULT '',
             ultima_sesion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -398,6 +638,15 @@ const ensureAdult = (fechaNacimiento) => {
             usuario_origen INTEGER,
             usuario_destino INTEGER,
             accion TEXT,
+            motivo TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS reportes_fotos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_origen INTEGER,
+            usuario_destino INTEGER,
+            foto_url TEXT,
             motivo TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -422,6 +671,7 @@ const ensureAdult = (fechaNacimiento) => {
 
     const alterations = [
         "ALTER TABLE usuarios ADD COLUMN fotos TEXT DEFAULT '[]';",
+        "ALTER TABLE usuarios ADD COLUMN fotos_moderadas TEXT DEFAULT '[]';",
         "ALTER TABLE usuarios ADD COLUMN bio TEXT DEFAULT '';",
         "ALTER TABLE usuarios ADD COLUMN ocupacion TEXT DEFAULT '';",
         "ALTER TABLE usuarios ADD COLUMN educacion TEXT DEFAULT '';",
@@ -434,6 +684,7 @@ const ensureAdult = (fechaNacimiento) => {
         "ALTER TABLE usuarios ADD COLUMN perfil_activo INTEGER DEFAULT 1;",
         "ALTER TABLE usuarios ADD COLUMN latitud_nacimiento REAL;",
         "ALTER TABLE usuarios ADD COLUMN longitud_nacimiento REAL;",
+        "ALTER TABLE usuarios ADD COLUMN push_token TEXT DEFAULT '';",
         "ALTER TABLE sincronias ADD COLUMN tipo TEXT DEFAULT 'like';",
     ];
 
@@ -452,6 +703,79 @@ const ensureAdult = (fechaNacimiento) => {
 
     console.log('Base de datos lista.');
 })();
+
+io.use(async (socket, next) => {
+    try {
+        const token = socket.handshake.auth?.token;
+        const sessionUser = await getSessionRecord(token);
+        if (!sessionUser) {
+            next(new Error('Sesion invalida'));
+            return;
+        }
+
+        socket.data.userId = sessionUser.id;
+        next();
+    } catch (error) {
+        next(error);
+    }
+});
+
+io.on('connection', (socket) => {
+    const userId = socket.data.userId;
+    registerConnectedSocket(userId, socket.id);
+    socket.join(`user:${userId}`);
+
+    socket.on('chat:join', async (payload = {}, ack) => {
+        try {
+            const otherUserId = Number(payload.otherUserId);
+            if (!Number.isFinite(otherUserId)) {
+                ack?.({ ok: false, mensaje: 'Chat invalido' });
+                return;
+            }
+
+            const allowed = await canUsersChat(userId, otherUserId);
+            if (!allowed) {
+                ack?.({ ok: false, mensaje: 'Solo puedes entrar a chats con matches' });
+                return;
+            }
+
+            activeChatsBySocket.set(socket.id, { userId, otherUserId });
+            socket.join(`chat:${pairKey(userId, otherUserId)}`);
+            await markConversationAsRead(userId, otherUserId);
+            ack?.({ ok: true });
+        } catch (error) {
+            console.error('Error entrando al chat realtime:', error);
+            ack?.({ ok: false, mensaje: 'No se pudo abrir el chat en tiempo real' });
+        }
+    });
+
+    socket.on('chat:leave', (payload = {}) => {
+        const otherUserId = Number(payload.otherUserId);
+        if (!Number.isFinite(otherUserId)) return;
+        activeChatsBySocket.delete(socket.id);
+        socket.leave(`chat:${pairKey(userId, otherUserId)}`);
+    });
+
+    socket.on('chat:read', async (payload = {}, ack) => {
+        try {
+            const otherUserId = Number(payload.otherUserId);
+            if (!Number.isFinite(otherUserId)) {
+                ack?.({ ok: false, mensaje: 'Chat invalido' });
+                return;
+            }
+            await markConversationAsRead(userId, otherUserId);
+            ack?.({ ok: true });
+        } catch (error) {
+            console.error('Error marcando mensajes como leidos:', error);
+            ack?.({ ok: false, mensaje: 'No se pudieron marcar los mensajes' });
+        }
+    });
+
+    socket.on('disconnect', () => {
+        activeChatsBySocket.delete(socket.id);
+        unregisterConnectedSocket(userId, socket.id);
+    });
+});
 
 app.post('/registrar-cronos', async (req, res) => {
     try {
@@ -477,23 +801,33 @@ app.post('/registrar-cronos', async (req, res) => {
             return res.status(400).json({ mensaje: 'La app solo esta disponible para mayores de 18 anos' });
         }
 
-        const profile = buildProfilePayload(req.body);
-        if (profile.edad_min_pref > profile.edad_max_pref) {
-            return res.status(400).json({ mensaje: 'El rango de edad no es valido' });
+        let existing = null;
+        if (`${correo || ''}`.trim()) {
+            existing = await db.get(`SELECT * FROM usuarios WHERE correo = ?`, [`${correo}`.trim().toLowerCase()]);
+        }
+        if (!existing && `${telefono || ''}`.trim()) {
+            existing = await db.get(`SELECT * FROM usuarios WHERE telefono = ?`, [`${telefono}`.trim()]);
         }
 
-        let existing = null;
-        if (profile.correo) {
-            existing = await db.get(`SELECT * FROM usuarios WHERE correo = ?`, [profile.correo]);
-        }
-        if (!existing && profile.telefono) {
-            existing = await db.get(`SELECT * FROM usuarios WHERE telefono = ?`, [profile.telefono]);
+        const sourceBody = existing
+            ? {
+                ...existing,
+                ...req.body,
+                fotos: req.body.fotos ?? parseJsonArray(existing.fotos),
+                foto: req.body.foto ?? existing.foto,
+                fecha_nacimiento: req.body.fecha_nacimiento || existing.fecha_nacimiento,
+            }
+            : req.body;
+
+        const profile = buildProfilePayload(sourceBody);
+        if (profile.edad_min_pref > profile.edad_max_pref) {
+            return res.status(400).json({ mensaje: 'El rango de edad no es valido' });
         }
 
         if (existing) {
             await db.run(
                 `UPDATE usuarios
-                 SET nombre = ?, fecha_nacimiento = ?, generacion = ?, signo_zodiacal = ?, foto = ?, fotos = ?, ubicacion = ?, gustos = ?,
+                 SET nombre = ?, fecha_nacimiento = ?, generacion = ?, signo_zodiacal = ?, foto = ?, fotos = ?, fotos_moderadas = ?, ubicacion = ?, gustos = ?,
                      metodo_registro = ?, correo = ?, telefono = ?, intencion = ?, genero = ?, genero_interes = ?, latitud = ?, longitud = ?,
                      hora_nacimiento = ?, lugar_nacimiento = ?, latitud_nacimiento = ?, longitud_nacimiento = ?, luna = ?, ascendente = ?, venus = ?, marte = ?, bio = ?, ocupacion = ?,
                      educacion = ?, edad_min_pref = ?, edad_max_pref = ?, distancia_max_km = ?, mostrar_edad = ?, mostrar_distancia = ?,
@@ -501,6 +835,7 @@ app.post('/registrar-cronos', async (req, res) => {
                  WHERE id = ?`,
                 [
                     profile.nombre, profile.fecha_nacimiento, profile.generacion, profile.signo_zodiacal, profile.foto, profile.fotos,
+                    getRetainedModeratedPhotos(existing, parseJsonArray(profile.fotos)),
                     profile.ubicacion, profile.gustos, profile.metodo_registro, profile.correo, profile.telefono, profile.intencion,
                     profile.genero, profile.genero_interes, profile.latitud, profile.longitud, profile.hora_nacimiento, profile.lugar_nacimiento,
                     profile.latitud_nacimiento, profile.longitud_nacimiento,
@@ -516,19 +851,19 @@ app.post('/registrar-cronos', async (req, res) => {
 
         const insertResult = await db.run(
             `INSERT INTO usuarios (
-                nombre, fecha_nacimiento, generacion, signo_zodiacal, foto, fotos, ubicacion, gustos, metodo_registro, correo, telefono,
+                nombre, fecha_nacimiento, generacion, signo_zodiacal, foto, fotos, fotos_moderadas, ubicacion, gustos, metodo_registro, correo, telefono,
                 intencion, genero, genero_interes, latitud, longitud, hora_nacimiento, lugar_nacimiento, latitud_nacimiento, longitud_nacimiento, luna, ascendente, venus, marte,
                 bio, ocupacion, educacion, edad_min_pref, edad_max_pref, distancia_max_km, mostrar_edad, mostrar_distancia,
-                consentimiento_ubicacion, perfil_activo, ultima_sesion
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+                consentimiento_ubicacion, perfil_activo, push_token, ultima_sesion
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
             [
-                profile.nombre, profile.fecha_nacimiento, profile.generacion, profile.signo_zodiacal, profile.foto, profile.fotos,
+                profile.nombre, profile.fecha_nacimiento, profile.generacion, profile.signo_zodiacal, profile.foto, profile.fotos, '[]',
                 profile.ubicacion, profile.gustos, profile.metodo_registro, profile.correo, profile.telefono, profile.intencion,
                 profile.genero, profile.genero_interes, profile.latitud, profile.longitud, profile.hora_nacimiento, profile.lugar_nacimiento,
                 profile.latitud_nacimiento, profile.longitud_nacimiento,
                 profile.luna, profile.ascendente, profile.venus, profile.marte, profile.bio, profile.ocupacion, profile.educacion,
                 profile.edad_min_pref, profile.edad_max_pref, profile.distancia_max_km, profile.mostrar_edad, profile.mostrar_distancia,
-                profile.consentimiento_ubicacion, profile.perfil_activo,
+                profile.consentimiento_ubicacion, profile.perfil_activo, '',
             ]
         );
 
@@ -544,10 +879,7 @@ app.post('/registrar-cronos', async (req, res) => {
 app.get('/sesion/:token', async (req, res) => {
     try {
         const { token } = req.params;
-        const session = await db.get(
-            `SELECT s.token, u.* FROM sesiones s JOIN usuarios u ON u.id = s.usuario_id WHERE s.token = ?`,
-            [token]
-        );
+        const session = await getSessionRecord(token);
 
         if (!session) {
             return res.status(404).json({ mensaje: 'Sesion no encontrada' });
@@ -555,7 +887,7 @@ app.get('/sesion/:token', async (req, res) => {
 
         await db.run(`UPDATE sesiones SET last_seen_at = CURRENT_TIMESTAMP WHERE token = ?`, [token]);
         await db.run(`UPDATE usuarios SET ultima_sesion = CURRENT_TIMESTAMP WHERE id = ?`, [session.id]);
-        res.json({ usuario: toPublicUser(session), token });
+        res.json({ usuario: toOwnUser(session), token });
     } catch (e) {
         console.error('Error recuperando sesion:', e);
         res.status(500).json({ mensaje: 'No se pudo recuperar la sesion' });
@@ -567,10 +899,48 @@ app.delete('/sesion/:token', async (req, res) => {
     res.json({ mensaje: 'OK' });
 });
 
+app.put('/usuarios/:id/push-token', requireSession, requireOwnUser, async (req, res) => {
+    try {
+        const pushToken = `${req.body.push_token || ''}`.trim();
+        await db.run(`UPDATE usuarios SET push_token = ? WHERE id = ?`, [pushToken, req.params.id]);
+        res.json({ mensaje: 'OK' });
+    } catch (error) {
+        console.error('Error guardando push token:', error);
+        res.status(500).json({ mensaje: 'No se pudo guardar el token de notificaciones' });
+    }
+});
+
+app.post('/usuarios/:id/fotos', requireSession, requireOwnUser, photoUpload.single('photo'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ mensaje: 'Debes enviar una imagen' });
+        }
+
+        res.json({
+            mensaje: 'OK',
+            url: createUploadUrl(req, req.file.filename),
+            fileName: req.file.filename,
+            mimeType: req.file.mimetype,
+            moderation_status: 'visible',
+        });
+    } catch (error) {
+        console.error('Error subiendo foto:', error);
+        res.status(500).json({ mensaje: 'No se pudo subir la foto' });
+    }
+});
+
 app.get('/perfil/:id', async (req, res) => {
-    const user = await db.get(`SELECT * FROM usuarios WHERE id = ?`, [req.params.id]);
-    if (!user) return res.status(404).json({ mensaje: 'Usuario no encontrado' });
-    res.json(toPublicUser(user));
+    try {
+        const user = await db.get(`SELECT * FROM usuarios WHERE id = ?`, [req.params.id]);
+        if (!user) return res.status(404).json({ mensaje: 'Usuario no encontrado' });
+
+        const sessionUser = await maybeAttachSessionUser(req);
+        const ownProfile = sessionUser && sessionUser.id === user.id;
+        res.json(ownProfile ? toOwnUser(user) : toPublicUser(user));
+    } catch (error) {
+        console.error('Error obteniendo perfil:', error);
+        res.status(500).json({ mensaje: 'No se pudo obtener el perfil' });
+    }
 });
 
 app.put('/perfil/:id', async (req, res) => {
@@ -581,6 +951,7 @@ app.put('/perfil/:id', async (req, res) => {
         const mergedBody = {
             ...current,
             ...req.body,
+            fotos: req.body.fotos ?? parseJsonArray(current.fotos),
             fecha_nacimiento: req.body.fecha_nacimiento || current.fecha_nacimiento,
         };
 
@@ -595,7 +966,7 @@ app.put('/perfil/:id', async (req, res) => {
 
         await db.run(
             `UPDATE usuarios
-             SET nombre = ?, fecha_nacimiento = ?, generacion = ?, signo_zodiacal = ?, foto = ?, fotos = ?, ubicacion = ?, gustos = ?,
+             SET nombre = ?, fecha_nacimiento = ?, generacion = ?, signo_zodiacal = ?, foto = ?, fotos = ?, fotos_moderadas = ?, ubicacion = ?, gustos = ?,
                  metodo_registro = ?, correo = ?, telefono = ?, intencion = ?, genero = ?, genero_interes = ?, latitud = ?, longitud = ?,
                  hora_nacimiento = ?, lugar_nacimiento = ?, latitud_nacimiento = ?, longitud_nacimiento = ?, luna = ?, ascendente = ?, venus = ?, marte = ?, bio = ?, ocupacion = ?,
                  educacion = ?, edad_min_pref = ?, edad_max_pref = ?, distancia_max_km = ?, mostrar_edad = ?, mostrar_distancia = ?,
@@ -603,6 +974,7 @@ app.put('/perfil/:id', async (req, res) => {
              WHERE id = ?`,
             [
                 profile.nombre, profile.fecha_nacimiento, profile.generacion, profile.signo_zodiacal, profile.foto, profile.fotos,
+                getRetainedModeratedPhotos(current, parseJsonArray(profile.fotos)),
                 profile.ubicacion, profile.gustos, profile.metodo_registro, profile.correo, profile.telefono, profile.intencion,
                 profile.genero, profile.genero_interes, profile.latitud, profile.longitud, profile.hora_nacimiento, profile.lugar_nacimiento,
                 profile.latitud_nacimiento, profile.longitud_nacimiento,
@@ -613,7 +985,7 @@ app.put('/perfil/:id', async (req, res) => {
         );
 
         const updated = await db.get(`SELECT * FROM usuarios WHERE id = ?`, [req.params.id]);
-        res.json({ mensaje: 'OK', usuario: toPublicUser(updated) });
+        res.json({ mensaje: 'OK', usuario: toOwnUser(updated) });
     } catch (e) {
         console.error('Error actualizando perfil:', e);
         res.status(500).json({ mensaje: 'No se pudo actualizar el perfil' });
@@ -732,6 +1104,9 @@ app.post('/swipe', async (req, res) => {
                     `UPDATE sincronias SET tipo = 'match' WHERE (usuario_origen = ? AND usuario_destino = ?) OR (usuario_origen = ? AND usuario_destino = ?)`,
                     [myId, targetId, targetId, myId]
                 );
+                emitConnectionsRefresh(Number(myId), Number(targetId));
+                io.to(`user:${myId}`).emit('match:created', { otherUserId: Number(targetId) });
+                io.to(`user:${targetId}`).emit('match:created', { otherUserId: Number(myId) });
             }
         }
 
@@ -815,22 +1190,12 @@ app.get('/matches/:userId/messages/:otherId', async (req, res) => {
     try {
         const userId = Number(req.params.userId);
         const otherId = Number(req.params.otherId);
-        const hasMatch = await db.get(
-            `SELECT 1 FROM sincronias
-             WHERE ((usuario_origen = ? AND usuario_destino = ?) OR (usuario_origen = ? AND usuario_destino = ?))
-             AND tipo = 'match'
-             LIMIT 1`,
-            [userId, otherId, otherId, userId]
-        );
-
+        const hasMatch = await canUsersChat(userId, otherId);
         if (!hasMatch) {
             return res.status(403).json({ mensaje: 'Solo puedes escribir a tus matches' });
         }
 
-        await db.run(
-            `UPDATE mensajes SET leido = 1 WHERE chat_key = ? AND receptor_id = ?`,
-            [pairKey(userId, otherId), userId]
-        );
+        await markConversationAsRead(userId, otherId);
 
         const messages = await db.all(
             `SELECT id, emisor_id, receptor_id, contenido, leido, created_at
@@ -850,20 +1215,14 @@ app.get('/matches/:userId/messages/:otherId', async (req, res) => {
 app.post('/matches/:userId/messages', async (req, res) => {
     try {
         const userId = Number(req.params.userId);
-        const { destino_id: targetId, contenido } = req.body;
+        const { destino_id: rawTargetId, contenido } = req.body;
+        const targetId = Number(rawTargetId);
         const trimmed = `${contenido || ''}`.trim();
         if (!targetId || !trimmed) {
             return res.status(400).json({ mensaje: 'Mensaje invalido' });
         }
 
-        const hasMatch = await db.get(
-            `SELECT 1 FROM sincronias
-             WHERE ((usuario_origen = ? AND usuario_destino = ?) OR (usuario_origen = ? AND usuario_destino = ?))
-             AND tipo = 'match'
-             LIMIT 1`,
-            [userId, targetId, targetId, userId]
-        );
-
+        const hasMatch = await canUsersChat(userId, targetId);
         if (!hasMatch) {
             return res.status(403).json({ mensaje: 'Solo puedes escribir a tus matches' });
         }
@@ -874,6 +1233,8 @@ app.post('/matches/:userId/messages', async (req, res) => {
             [chatKey, userId, targetId, trimmed]
         );
         const message = await db.get(`SELECT * FROM mensajes WHERE id = ?`, [insert.lastID]);
+        await emitMessageRealtime(message);
+        await notifyRecipientIfNeeded(message);
         res.json({ mensaje: 'OK', item: message });
     } catch (e) {
         console.error('Error enviando mensaje:', e);
@@ -906,4 +1267,77 @@ app.post('/moderacion', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => console.log(`SYNCRONOS en puerto ${PORT}`));
+app.post('/moderacion/foto', async (req, res) => {
+    try {
+        const { mi_id: myId, destino_id: targetId, foto_url: photoUrl, motivo } = req.body;
+        if (!myId || !targetId || !photoUrl) {
+            return res.status(400).json({ mensaje: 'Debes indicar la foto a reportar' });
+        }
+
+        const targetUser = await db.get(`SELECT * FROM usuarios WHERE id = ?`, [targetId]);
+        if (!targetUser) {
+            return res.status(404).json({ mensaje: 'Usuario no encontrado' });
+        }
+
+        const targetPhotos = uniqueStrings(parseJsonArray(targetUser.fotos));
+        if (!targetPhotos.includes(photoUrl)) {
+            return res.status(400).json({ mensaje: 'La foto ya no esta disponible' });
+        }
+
+        const existing = await db.get(
+            `SELECT * FROM reportes_fotos WHERE usuario_origen = ? AND usuario_destino = ? AND foto_url = ?`,
+            [myId, targetId, photoUrl]
+        );
+
+        if (!existing) {
+            await db.run(
+                `INSERT INTO reportes_fotos (usuario_origen, usuario_destino, foto_url, motivo) VALUES (?, ?, ?, ?)`,
+                [myId, targetId, photoUrl, `${motivo || ''}`.trim()]
+            );
+        }
+
+        const reportCount = await db.get(
+            `SELECT COUNT(*) AS total FROM reportes_fotos WHERE usuario_destino = ? AND foto_url = ?`,
+            [targetId, photoUrl]
+        );
+
+        let ocultaPorModeracion = false;
+        if ((reportCount?.total || 0) >= PHOTO_REPORT_HIDE_THRESHOLD) {
+            const moderatedPhotos = getModeratedPhotoList(targetUser);
+            if (!moderatedPhotos.includes(photoUrl)) {
+                moderatedPhotos.push(photoUrl);
+                await db.run(
+                    `UPDATE usuarios SET fotos_moderadas = ? WHERE id = ?`,
+                    [JSON.stringify(uniqueStrings(moderatedPhotos)), targetId]
+                );
+            }
+            ocultaPorModeracion = true;
+        }
+
+        res.json({
+            mensaje: 'OK',
+            reportes: reportCount?.total || 1,
+            oculta_por_moderacion: ocultaPorModeracion,
+        });
+    } catch (e) {
+        console.error('Error reportando foto:', e);
+        res.status(500).json({ mensaje: 'No se pudo reportar la foto' });
+    }
+});
+
+app.use((error, _req, res, next) => {
+    if (error instanceof multer.MulterError) {
+        if (error.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({ mensaje: 'La foto supera el limite permitido de 8 MB' });
+        }
+        return res.status(400).json({ mensaje: 'No se pudo procesar la imagen' });
+    }
+
+    if (error?.message === 'PHOTO_TYPE_INVALID') {
+        return res.status(400).json({ mensaje: 'Solo se permiten imagenes JPG, PNG, WEBP o HEIC' });
+    }
+
+    next(error);
+});
+
+server.listen(PORT, () => console.log(`SYNCRONOS en puerto ${PORT}`));

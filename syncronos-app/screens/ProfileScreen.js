@@ -3,10 +3,13 @@ import { Alert, Image, ScrollView, StyleSheet, Switch, Text, TextInput, Touchabl
 import { AppContext } from '../context/AppContext';
 import AstralPickerModal from '../components/AstralPickerModal';
 import LocationSelectorModal from '../components/LocationSelectorModal';
+import PhotoSlotsEditor from '../components/PhotoSlotsEditor';
+import { extractPhotoUrls, normalizePhotoDrafts, uploadDraftPhotos } from '../utils/photos';
 
 export default function ProfileScreen() {
-  const { user, baseUrl, setUser, refreshUser, logout } = useContext(AppContext);
+  const { user, apiFetch, setUser, refreshUser, logout } = useContext(AppContext);
   const [draft, setDraft] = useState(null);
+  const [photoDrafts, setPhotoDrafts] = useState(() => normalizePhotoDrafts());
   const [saving, setSaving] = useState(false);
   const [birthDate, setBirthDate] = useState(new Date(2000, 0, 1));
   const [showBirthDatePicker, setShowBirthDatePicker] = useState(false);
@@ -21,11 +24,11 @@ export default function ProfileScreen() {
       const parsedBirthTime = user.hora_nacimiento ? new Date(`2000-01-01T${user.hora_nacimiento}:00`) : new Date(2000, 0, 1, 12, 0);
       setDraft({
         ...user,
-        fotos: [...(user.fotos || ['', '', '']), '', ''].slice(0, 3),
         edad_min_pref: `${user.edad_min_pref ?? 18}`,
         edad_max_pref: `${user.edad_max_pref ?? 99}`,
         distancia_max_km: `${user.distancia_max_km ?? 50}`,
       });
+      setPhotoDrafts(normalizePhotoDrafts(user.fotos));
       setBirthDate(Number.isNaN(parsedBirthDate.getTime()) ? new Date(2000, 0, 1) : parsedBirthDate);
       setBirthTime(Number.isNaN(parsedBirthTime.getTime()) ? new Date(2000, 0, 1, 12, 0) : parsedBirthTime);
     }
@@ -35,15 +38,10 @@ export default function ProfileScreen() {
     return null;
   }
 
+  const heroPhoto = photoDrafts.find(Boolean)?.remoteUrl || photoDrafts.find(Boolean)?.uri || draft.foto;
+
   const updateField = (key, value) => {
     setDraft((current) => ({ ...current, [key]: value }));
-  };
-
-  const updatePhoto = (index, value) => {
-    setDraft((current) => ({
-      ...current,
-      fotos: current.fotos.map((item, position) => (position === index ? value : item)),
-    }));
   };
 
   const formatDate = (date) => {
@@ -92,12 +90,18 @@ export default function ProfileScreen() {
 
     setSaving(true);
     try {
-      const response = await fetch(`${baseUrl}/perfil/${user.id}`, {
+      const uploadedDrafts = await uploadDraftPhotos({
+        drafts: photoDrafts,
+        userId: user.id,
+        request: apiFetch,
+        onDraftsChange: setPhotoDrafts,
+      });
+
+      const response = await apiFetch(`/perfil/${user.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...draft,
-          fotos: draft.fotos.filter(Boolean),
+          fotos: extractPhotoUrls(uploadedDrafts),
         }),
       });
       const data = await response.json();
@@ -106,6 +110,7 @@ export default function ProfileScreen() {
         return;
       }
       setUser(data.usuario);
+      setPhotoDrafts(normalizePhotoDrafts(data.usuario?.fotos));
       await refreshUser();
       Alert.alert('Perfil actualizado', 'Tus cambios ya quedaron guardados.');
     } catch (error) {
@@ -119,7 +124,7 @@ export default function ProfileScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.heroCard}>
-        {draft.foto ? <Image source={{ uri: draft.foto }} style={styles.heroImage} /> : null}
+        {heroPhoto ? <Image source={{ uri: heroPhoto }} style={styles.heroImage} /> : null}
         <Text style={styles.heroTitle}>{draft.nombre}</Text>
         <Text style={styles.heroSubtitle}>{draft.signo_zodiacal || 'Signo pendiente'} · {draft.generacion || 'Generacion pendiente'}</Text>
         <Text style={styles.heroMeta}>{draft.intencion || 'Intencion pendiente'} · {draft.ubicacion || 'Ubicacion pendiente'}</Text>
@@ -148,17 +153,14 @@ export default function ProfileScreen() {
             {formatLocationLabel(draft.ubicacion, 'Selecciona tu ciudad actual')}
           </Text>
         </TouchableOpacity>
-        {draft.fotos.map((foto, index) => (
-          <TextInput
-            key={`foto-profile-${index}`}
-            style={styles.input}
-            value={foto}
-            onChangeText={(value) => updatePhoto(index, value)}
-            placeholder={`URL de foto ${index + 1}`}
-            placeholderTextColor="#666"
-            autoCapitalize="none"
-          />
-        ))}
+        <PhotoSlotsEditor
+          title="Fotos reales"
+          helperText="Puedes actualizar tus fotos desde la galeria o la camara. Si una foto recibe varios reportes, se ocultara del feed."
+          photos={photoDrafts}
+          onChange={setPhotoDrafts}
+          disabled={saving}
+          moderatedUrls={draft.fotos_moderadas || []}
+        />
       </View>
 
       <View style={styles.section}>

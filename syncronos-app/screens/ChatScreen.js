@@ -1,43 +1,91 @@
-import React, { useCallback, useContext, useEffect, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { AppContext } from '../context/AppContext';
 
+const sortMessages = (items) => [...items].sort((left, right) => {
+  if (left.created_at === right.created_at) {
+    return left.id - right.id;
+  }
+  return `${left.created_at}`.localeCompare(`${right.created_at}`);
+});
+
+const upsertMessage = (items, nextMessage) => {
+  const existing = items.find((item) => item.id === nextMessage.id);
+  if (existing) {
+    return sortMessages(items.map((item) => (item.id === nextMessage.id ? { ...item, ...nextMessage } : item)));
+  }
+  return sortMessages([...items, nextMessage]);
+};
+
 export default function ChatScreen({ route }) {
   const { otherUserId, nombre } = route.params;
-  const { user, baseUrl } = useContext(AppContext);
+  const { user, apiFetch, socket } = useContext(AppContext);
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
+
+  const chatKey = useMemo(() => [user?.id, otherUserId].filter(Boolean).sort((a, b) => a - b).join(':'), [otherUserId, user?.id]);
 
   const loadMessages = useCallback(async () => {
     if (!user?.id || !otherUserId) return;
     try {
-      const response = await fetch(`${baseUrl}/matches/${user.id}/messages/${otherUserId}`);
+      const response = await apiFetch(`/matches/${user.id}/messages/${otherUserId}`);
       if (!response.ok) return;
       const data = await response.json();
-      setMessages(Array.isArray(data) ? data : []);
+      setMessages(Array.isArray(data) ? sortMessages(data) : []);
     } catch (error) {
       console.error('Error cargando mensajes', error);
     }
-  }, [baseUrl, otherUserId, user?.id]);
+  }, [apiFetch, otherUserId, user?.id]);
 
   useEffect(() => {
     loadMessages();
-    const timer = setInterval(loadMessages, 5000);
-    return () => clearInterval(timer);
   }, [loadMessages]);
+
+  useEffect(() => {
+    if (!socket || !user?.id || !otherUserId) return undefined;
+
+    socket.emit('chat:join', { otherUserId });
+
+    const handleIncomingMessage = (message) => {
+      if (message.chat_key !== chatKey) return;
+      setMessages((current) => upsertMessage(current, message));
+      if (message.emisor_id === otherUserId) {
+        socket.emit('chat:read', { otherUserId });
+      }
+    };
+
+    const handleRead = ({ chatKey: incomingChatKey, readerId }) => {
+      if (incomingChatKey !== chatKey || readerId !== otherUserId) return;
+      setMessages((current) => current.map((item) => (
+        item.receptor_id === otherUserId ? { ...item, leido: 1 } : item
+      )));
+    };
+
+    socket.on('chat:message', handleIncomingMessage);
+    socket.on('chat:read', handleRead);
+
+    return () => {
+      socket.emit('chat:leave', { otherUserId });
+      socket.off('chat:message', handleIncomingMessage);
+      socket.off('chat:read', handleRead);
+    };
+  }, [chatKey, otherUserId, socket, user?.id]);
 
   const sendMessage = async () => {
     const trimmed = draft.trim();
     if (!trimmed) return;
     try {
-      const response = await fetch(`${baseUrl}/matches/${user.id}/messages`, {
+      const response = await apiFetch(`/matches/${user.id}/messages`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ destino_id: otherUserId, contenido: trimmed }),
       });
       if (!response.ok) return;
+
+      const data = await response.json();
+      if (data.item) {
+        setMessages((current) => upsertMessage(current, data.item));
+      }
       setDraft('');
-      loadMessages();
     } catch (error) {
       console.error('Error enviando mensaje', error);
     }

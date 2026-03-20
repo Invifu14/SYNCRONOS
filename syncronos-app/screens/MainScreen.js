@@ -8,7 +8,13 @@ const { height } = Dimensions.get('window');
 function ProfileCard({ profile, title, subtitle }) {
   return (
     <View style={styles.card}>
-      <Image source={{ uri: profile.foto }} style={styles.cardImage} />
+      {profile.foto ? (
+        <Image source={{ uri: profile.foto }} style={styles.cardImage} />
+      ) : (
+        <View style={styles.cardFallback}>
+          <Text style={styles.cardFallbackText}>Sin foto visible</Text>
+        </View>
+      )}
       <View style={styles.badge}>
         <Text style={styles.badgeText}>{profile.compatibilidad ?? 0}% match</Text>
       </View>
@@ -39,7 +45,7 @@ function ProfileCard({ profile, title, subtitle }) {
 export default function MainScreen() {
   const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading] = useState(false);
-  const { user, baseUrl } = useContext(AppContext);
+  const { user, apiFetch } = useContext(AppContext);
 
   const fetchUsuarios = useCallback(async () => {
     if (!user?.id) {
@@ -49,7 +55,7 @@ export default function MainScreen() {
 
     setLoading(true);
     try {
-      const response = await fetch(`${baseUrl}/feed/${user.id}?mode=radar`);
+      const response = await apiFetch(`/feed/${user.id}?mode=radar`);
       const data = await response.json();
       setUsuarios(Array.isArray(data) ? data : []);
     } catch (error) {
@@ -58,7 +64,7 @@ export default function MainScreen() {
     } finally {
       setLoading(false);
     }
-  }, [baseUrl, user?.id]);
+  }, [apiFetch, user?.id]);
 
   useFocusEffect(useCallback(() => { fetchUsuarios(); }, [fetchUsuarios]));
 
@@ -67,9 +73,8 @@ export default function MainScreen() {
   const handleDecision = async (tipo) => {
     if (!usuarioActual) return;
     try {
-      const response = await fetch(`${baseUrl}/swipe`, {
+      const response = await apiFetch('/swipe', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mi_id: user.id, destino_id: usuarioActual.id, tipo }),
       });
       const data = await response.json();
@@ -96,14 +101,44 @@ export default function MainScreen() {
         style: accion === 'block' ? 'destructive' : 'default',
         onPress: async () => {
           try {
-            await fetch(`${baseUrl}/moderacion`, {
+            await apiFetch('/moderacion', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ mi_id: user.id, destino_id: usuarioActual.id, accion, motivo: `Accion desde radar: ${accion}` }),
             });
             setUsuarios((current) => current.slice(1));
           } catch (error) {
             console.error('Error en moderacion', error);
+          }
+        },
+      },
+    ]);
+  };
+
+  const handlePhotoReport = () => {
+    if (!usuarioActual?.foto) {
+      Alert.alert('Sin foto visible', 'Este perfil no tiene una foto publica para reportar ahora mismo.');
+      return;
+    }
+
+    Alert.alert('Reportar foto', `¿Quieres reportar la foto principal de ${usuarioActual.nombre}?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Reportar',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await apiFetch('/moderacion/foto', {
+              method: 'POST',
+              body: JSON.stringify({
+                mi_id: user.id,
+                destino_id: usuarioActual.id,
+                foto_url: usuarioActual.foto,
+                motivo: 'Reporte desde radar',
+              }),
+            });
+            Alert.alert('Gracias', 'La foto quedo reportada para revision.');
+          } catch (error) {
+            console.error('Error reportando foto', error);
           }
         },
       },
@@ -154,6 +189,9 @@ export default function MainScreen() {
             <TouchableOpacity style={styles.secondaryActionButton} onPress={() => handleModeration('block')}>
               <Text style={styles.secondaryActionText}>Bloquear</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryActionButton} onPress={handlePhotoReport}>
+              <Text style={styles.secondaryActionText}>Reportar foto</Text>
+            </TouchableOpacity>
           </View>
         </>
       )}
@@ -189,6 +227,13 @@ const styles = StyleSheet.create({
     height: height * 0.62,
     position: 'relative',
   },
+  cardFallback: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#11112e',
+  },
+  cardFallbackText: { color: '#d0d0de', fontSize: 18, fontWeight: '700' },
   cardImage: { width: '100%', height: '100%', position: 'absolute' },
   badge: {
     position: 'absolute',
@@ -222,9 +267,9 @@ const styles = StyleSheet.create({
   likeButton: { backgroundColor: '#D4AF37', borderColor: '#D4AF37' },
   actionLabel: { color: '#fff', fontSize: 15, fontWeight: '700' },
   darkActionLabel: { color: '#050510' },
-  secondaryActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  secondaryActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
   secondaryActionButton: {
-    flex: 1,
+    minWidth: '47%',
     paddingVertical: 12,
     borderRadius: 14,
     alignItems: 'center',

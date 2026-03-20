@@ -14,8 +14,11 @@
     "cors": "^2.8.6",
     "ephemeris": "^2.2.0",
     "expo": "^55.0.2",
+    "expo-server-sdk": "^6.1.0",
     "express": "^5.2.1",
     "luxon": "^3.7.2",
+    "multer": "^2.1.1",
+    "socket.io": "^4.8.3",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7"
   },

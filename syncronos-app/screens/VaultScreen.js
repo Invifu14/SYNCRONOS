@@ -1,4 +1,4 @@
-import React, { useCallback, useContext, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { AppContext } from '../context/AppContext';
@@ -14,7 +14,7 @@ function SegmentButton({ active, label, onPress }) {
 export default function VaultScreen() {
   const [segment, setSegment] = useState('matches');
   const [connections, setConnections] = useState({ likes_enviados: [], likes_recibidos: [], matches: [] });
-  const { user, baseUrl } = useContext(AppContext);
+  const { user, apiFetch, socket } = useContext(AppContext);
   const navigation = useNavigation();
 
   const loadConnections = useCallback(async () => {
@@ -24,7 +24,7 @@ export default function VaultScreen() {
     }
 
     try {
-      const response = await fetch(`${baseUrl}/connections/${user.id}`);
+      const response = await apiFetch(`/connections/${user.id}`);
       const data = await response.json();
       setConnections({
         likes_enviados: data.likes_enviados ?? [],
@@ -34,15 +34,30 @@ export default function VaultScreen() {
     } catch (error) {
       console.error('Error al cargar conexiones', error);
     }
-  }, [baseUrl, user?.id]);
+  }, [apiFetch, user?.id]);
 
   useFocusEffect(useCallback(() => { loadConnections(); }, [loadConnections]));
 
+  useEffect(() => {
+    if (!socket) return undefined;
+
+    const refreshConnections = () => {
+      loadConnections();
+    };
+
+    socket.on('connections:refresh', refreshConnections);
+    socket.on('match:created', refreshConnections);
+
+    return () => {
+      socket.off('connections:refresh', refreshConnections);
+      socket.off('match:created', refreshConnections);
+    };
+  }, [loadConnections, socket]);
+
   const acceptLike = async (targetId) => {
     try {
-      await fetch(`${baseUrl}/swipe`, {
+      await apiFetch('/swipe', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mi_id: user.id, destino_id: targetId, tipo: 'like' }),
       });
       loadConnections();

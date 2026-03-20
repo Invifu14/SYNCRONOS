@@ -8,7 +8,7 @@ const { height } = Dimensions.get('window');
 export default function SuggestionsScreen() {
   const [sugerencias, setSugerencias] = useState([]);
   const [loading, setLoading] = useState(false);
-  const { user, baseUrl } = useContext(AppContext);
+  const { user, apiFetch } = useContext(AppContext);
 
   const fetchSugerencias = useCallback(async () => {
     if (!user?.id) {
@@ -18,7 +18,7 @@ export default function SuggestionsScreen() {
 
     setLoading(true);
     try {
-      const response = await fetch(`${baseUrl}/feed/${user.id}?mode=affinity`);
+      const response = await apiFetch(`/feed/${user.id}?mode=affinity`);
       const data = await response.json();
       setSugerencias(Array.isArray(data) ? data : []);
     } catch (error) {
@@ -27,7 +27,7 @@ export default function SuggestionsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [baseUrl, user?.id]);
+  }, [apiFetch, user?.id]);
 
   useFocusEffect(useCallback(() => { fetchSugerencias(); }, [fetchSugerencias]));
 
@@ -36,9 +36,8 @@ export default function SuggestionsScreen() {
   const handleDecision = async (tipo) => {
     if (!sugerenciaActual) return;
     try {
-      const response = await fetch(`${baseUrl}/swipe`, {
+      const response = await apiFetch('/swipe', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mi_id: user.id, destino_id: sugerenciaActual.id, tipo }),
       });
       const data = await response.json();
@@ -48,6 +47,28 @@ export default function SuggestionsScreen() {
       }
     } catch (error) {
       console.error('Error al registrar decision', error);
+    }
+  };
+
+  const handlePhotoReport = async () => {
+    if (!sugerenciaActual?.foto) {
+      Alert.alert('Sin foto visible', 'Este perfil no tiene una foto publica para reportar ahora mismo.');
+      return;
+    }
+
+    try {
+      await apiFetch('/moderacion/foto', {
+        method: 'POST',
+        body: JSON.stringify({
+          mi_id: user.id,
+          destino_id: sugerenciaActual.id,
+          foto_url: sugerenciaActual.foto,
+          motivo: 'Reporte desde afinidad',
+        }),
+      });
+      Alert.alert('Gracias', 'La foto quedo reportada para revision.');
+    } catch (error) {
+      console.error('Error reportando foto', error);
     }
   };
 
@@ -71,7 +92,13 @@ export default function SuggestionsScreen() {
       ) : (
         <>
           <View style={styles.card}>
-            <Image source={{ uri: sugerenciaActual.foto }} style={styles.cardImage} />
+            {sugerenciaActual.foto ? (
+              <Image source={{ uri: sugerenciaActual.foto }} style={styles.cardImage} />
+            ) : (
+              <View style={styles.cardFallback}>
+                <Text style={styles.cardFallbackText}>Sin foto visible</Text>
+              </View>
+            )}
             <View style={styles.badge}>
               <Text style={styles.badgeText}>{sugerenciaActual.compatibilidad ?? 0}% afinidad</Text>
             </View>
@@ -101,6 +128,10 @@ export default function SuggestionsScreen() {
               <Text style={[styles.actionLabel, styles.darkActionLabel]}>Like</Text>
             </TouchableOpacity>
           </View>
+
+          <TouchableOpacity style={styles.reportPhotoButton} onPress={handlePhotoReport}>
+            <Text style={styles.reportPhotoText}>Reportar foto</Text>
+          </TouchableOpacity>
         </>
       )}
     </View>
@@ -135,6 +166,13 @@ const styles = StyleSheet.create({
     height: height * 0.62,
     position: 'relative',
   },
+  cardFallback: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#11112e',
+  },
+  cardFallbackText: { color: '#d0d0de', fontSize: 18, fontWeight: '700' },
   cardImage: { width: '100%', height: '100%', position: 'absolute' },
   badge: {
     position: 'absolute',
@@ -166,4 +204,14 @@ const styles = StyleSheet.create({
   likeButton: { backgroundColor: '#D4AF37', borderColor: '#D4AF37' },
   actionLabel: { color: '#fff', fontSize: 15, fontWeight: '700' },
   darkActionLabel: { color: '#050510' },
+  reportPhotoButton: {
+    marginTop: 12,
+    backgroundColor: '#171736',
+    borderWidth: 1,
+    borderColor: '#2a2a4c',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  reportPhotoText: { color: '#fff', fontWeight: '700' },
 });

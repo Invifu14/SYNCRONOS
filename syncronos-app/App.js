@@ -1,6 +1,7 @@
 import React, { useContext, useEffect } from 'react';
 import { ActivityIndicator, StatusBar, StyleSheet, View } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import * as Notifications from 'expo-notifications';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +16,16 @@ import { AppContext, AppProvider } from './context/AppContext';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+const navigationRef = createNavigationContainerRef();
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 const TAB_ICONS = {
   Radar: { active: 'flame', inactive: 'flame-outline' },
@@ -23,7 +34,7 @@ const TAB_ICONS = {
   Perfil: { active: 'person', inactive: 'person-outline' },
 };
 
-const MI_IP = '192.168.1.113';
+const MI_IP = '192.168.1.7';
 const BASE_URL = MI_IP === 'localhost' ? 'http://localhost:3000' : `http://${MI_IP}:3000`;
 
 function HomeTabs() {
@@ -66,6 +77,23 @@ function AppNavigator() {
     restoreSession();
   }, [restoreSession]);
 
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data ?? {};
+      const otherUserId = Number(data.otherUserId);
+      if (!navigationRef.isReady() || !user || !Number.isFinite(otherUserId)) return;
+
+      navigationRef.navigate('Chat', {
+        otherUserId,
+        nombre: data.nombre ?? 'Chat',
+      });
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [user]);
+
   if (!sessionReady) {
     return (
       <View style={styles.splash}>
@@ -75,7 +103,7 @@ function AppNavigator() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator
         screenOptions={{
           headerStyle: { backgroundColor: '#0f0f25' },

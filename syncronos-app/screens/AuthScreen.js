@@ -3,6 +3,8 @@ import { Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacit
 import { AppContext } from '../context/AppContext';
 import AstralPickerModal from '../components/AstralPickerModal';
 import LocationSelectorModal from '../components/LocationSelectorModal';
+import PhotoSlotsEditor from '../components/PhotoSlotsEditor';
+import { extractPhotoUrls, normalizePhotoDrafts, uploadDraftPhotos } from '../utils/photos';
 
 function OptionButton({ active, label, onPress }) {
   return (
@@ -38,7 +40,7 @@ export default function AuthScreen() {
   const [bio, setBio] = useState('');
   const [ocupacion, setOcupacion] = useState('');
   const [educacion, setEducacion] = useState('');
-  const [fotos, setFotos] = useState(['', '', '']);
+  const [fotos, setFotos] = useState(() => normalizePhotoDrafts());
   const [edadMinPref, setEdadMinPref] = useState('18');
   const [edadMaxPref, setEdadMaxPref] = useState('35');
   const [distanciaMaxKm, setDistanciaMaxKm] = useState('50');
@@ -49,6 +51,7 @@ export default function AuthScreen() {
   const [latitud, setLatitud] = useState(null);
   const [longitud, setLongitud] = useState(null);
   const [locationMessage, setLocationMessage] = useState('');
+  const [creatingProfile, setCreatingProfile] = useState(false);
   const { baseUrl, completeLogin } = useContext(AppContext);
 
   const formatDate = (date) => {
@@ -121,6 +124,12 @@ export default function AuthScreen() {
       return;
     }
 
+    if (!fotos.some(Boolean)) {
+      Alert.alert('Error', 'Agrega al menos una foto real antes de crear tu perfil.');
+      return;
+    }
+
+    setCreatingProfile(true);
     try {
       const response = await fetch(`${baseUrl}/registrar-cronos`, {
         method: 'POST',
@@ -137,7 +146,7 @@ export default function AuthScreen() {
           bio,
           ocupacion,
           educacion,
-          fotos,
+          fotos: [],
           metodo_registro: metodoRegistro,
           correo,
           telefono,
@@ -162,15 +171,45 @@ export default function AuthScreen() {
         return;
       }
 
-      await completeLogin(data.usuario, data.token);
+      let nextUser = data.usuario;
+      const requestWithSession = (path, options = {}) => {
+        const headers = new Headers(options.headers || {});
+        headers.set('x-session-token', data.token);
+        if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
+          headers.set('Content-Type', 'application/json');
+        }
+        return fetch(`${baseUrl}${path}`, {
+          ...options,
+          headers,
+        });
+      };
+
+      const uploadedDrafts = await uploadDraftPhotos({
+        drafts: fotos,
+        userId: data.usuario.id,
+        request: requestWithSession,
+        onDraftsChange: setFotos,
+      });
+      const uploadedPhotoUrls = extractPhotoUrls(uploadedDrafts);
+
+      const profileResponse = await requestWithSession(`/perfil/${data.usuario.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          fotos: uploadedPhotoUrls,
+        }),
+      });
+      const profileData = await profileResponse.json();
+      if (profileResponse.ok) {
+        nextUser = profileData.usuario ?? nextUser;
+      }
+
+      await completeLogin(nextUser, data.token);
     } catch (error) {
       console.error(error);
       Alert.alert('Error', 'No se pudo conectar con el servidor.');
+    } finally {
+      setCreatingProfile(false);
     }
-  };
-
-  const updatePhoto = (index, value) => {
-    setFotos((current) => current.map((item, position) => (position === index ? value : item)));
   };
 
   const renderContactStep = () => (
@@ -260,17 +299,13 @@ export default function AuthScreen() {
   const renderDetails = () => (
     <View style={styles.card}>
       <Text style={styles.title}>Fotos, filtros y privacidad</Text>
-      {fotos.map((foto, index) => (
-        <TextInput
-          key={`foto-${index}`}
-          style={styles.input}
-          placeholder={`URL de foto ${index + 1}`}
-          placeholderTextColor="#666"
-          value={foto}
-          onChangeText={(value) => updatePhoto(index, value)}
-          autoCapitalize="none"
-        />
-      ))}
+      <PhotoSlotsEditor
+        title="Tus fotos reales"
+        helperText="Elige hasta tres fotos desde la galeria o la camara. Las guardaremos en tu perfil y podran reportarse si no cumplen las reglas."
+        photos={fotos}
+        onChange={setFotos}
+        disabled={creatingProfile}
+      />
       <View style={styles.inlineInputs}>
         <TextInput style={[styles.input, styles.compactInput]} placeholder="Edad min" placeholderTextColor="#666" value={edadMinPref} onChangeText={setEdadMinPref} keyboardType="numeric" />
         <TextInput style={[styles.input, styles.compactInput]} placeholder="Edad max" placeholderTextColor="#666" value={edadMaxPref} onChangeText={setEdadMaxPref} keyboardType="numeric" />
@@ -295,8 +330,8 @@ export default function AuthScreen() {
         <Switch value={perfilActivo} onValueChange={setPerfilActivo} thumbColor="#D4AF37" trackColor={{ false: '#333', true: '#4a4120' }} />
       </View>
 
-      <TouchableOpacity style={styles.primaryButton} onPress={registrar}>
-        <Text style={styles.primaryButtonText}>Crear perfil</Text>
+      <TouchableOpacity style={styles.primaryButton} onPress={registrar} disabled={creatingProfile}>
+        <Text style={styles.primaryButtonText}>{creatingProfile ? 'Creando perfil...' : 'Crear perfil'}</Text>
       </TouchableOpacity>
     </View>
   );
