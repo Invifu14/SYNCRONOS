@@ -6,10 +6,12 @@ const http = require('http');
 const multer = require('multer');
 const path = require('path');
 const sqlite3 = require('sqlite3');
+const { IANAZone } = require('luxon');
 const { Expo } = require('expo-server-sdk');
 const { Server } = require('socket.io');
 const { open } = require('sqlite');
 const { calcularCartaAstral, zodiacSigns } = require('./astrology');
+const { inferBirthTimeZone } = require('./birthTimezones');
 
 const app = express();
 const server = http.createServer(app);
@@ -22,6 +24,7 @@ const io = new Server(server, {
 const expo = new Expo();
 const PORT = 3000;
 const MAX_PHOTOS_PER_PROFILE = 3;
+const MAX_PROFILE_PROMPTS = 3;
 const MAX_PHOTO_SIZE_BYTES = 8 * 1024 * 1024;
 const PHOTO_REPORT_HIDE_THRESHOLD = 3;
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
@@ -94,6 +97,65 @@ const parseJsonArray = (value) => {
 };
 
 const uniqueStrings = (values) => [...new Set((values || []).map((item) => `${item || ''}`.trim()).filter(Boolean))];
+
+const parsePromptInput = (value) => {
+    if (!value) return [];
+
+    const rawItems = Array.isArray(value) ? value : parseJsonArray(value);
+    return rawItems
+        .map((item, index) => {
+            if (!item || typeof item !== 'object') return null;
+
+            const answer = `${item.answer || item.respuesta || ''}`.trim();
+            if (!answer) return null;
+
+            return {
+                id: `${item.id || `prompt_${index + 1}`}`.trim(),
+                question: `${item.question || item.pregunta || ''}`.trim(),
+                answer: answer.slice(0, 240),
+            };
+        })
+        .filter(Boolean)
+        .slice(0, MAX_PROFILE_PROMPTS);
+};
+
+const resolveBirthTimezone = (body) => {
+    const explicitTimezone = `${body.timezone_nacimiento || ''}`.trim();
+    if (IANAZone.isValidZone(explicitTimezone)) return explicitTimezone;
+
+    const inferredTimezone = inferBirthTimeZone(body.lugar_nacimiento || body.ubicacion || '');
+    return IANAZone.isValidZone(inferredTimezone) ? inferredTimezone : 'UTC';
+};
+
+const buildCompatibilityInterpretation = (score, reasons, userA, userB) => {
+    const mainReason = reasons[0] || 'Hay curiosidad mutua para descubrirse mejor';
+    const sameGeneration = userA.generacion && userA.generacion === userB.generacion;
+    const sameMoon = userA.luna && userB.luna && userA.luna === userB.luna && userA.luna !== 'Desconocido';
+
+    let title = 'Conexion por explorar';
+    let summary = `Su punto mas fuerte ahora mismo es que ${mainReason.toLowerCase()}.`;
+    let nextStep = 'Empiecen con una conversacion ligera y vean si la quimica aterriza.';
+
+    if (score >= 80) {
+        title = 'Sincronia muy alta';
+        summary = `Hay una mezcla poco comun de atraccion y afinidad: ${mainReason.toLowerCase()}.`;
+        nextStep = sameMoon
+            ? 'Vayan a una charla mas emocional desde el inicio; es probable que se entiendan rapido.'
+            : 'Una cita corta y con plan claro puede convertir la atraccion en match serio.';
+    } else if (score >= 65) {
+        title = 'Potencial romantico alto';
+        summary = `Hay bases solidas para una conexion real, especialmente porque ${mainReason.toLowerCase()}.`;
+        nextStep = sameGeneration
+            ? 'Aprovechen referencias y planes en comun para romper el hielo con naturalidad.'
+            : 'Busquen puntos compartidos antes de ir a lo profundo; el puente esta, solo hay que abrirlo.';
+    } else if (score >= 50) {
+        title = 'Buena chispa inicial';
+        summary = `La compatibilidad no es perfecta, pero si prometedora: ${mainReason.toLowerCase()}.`;
+        nextStep = 'Una conversacion con humor y curiosidad puede mostrar si esto crece o se queda corto.';
+    }
+
+    return { title, summary, next_step: nextStep };
+};
 
 const calculateAge = (fechaStr) => {
     if (!fechaStr) return null;
@@ -260,9 +322,13 @@ const calculateCompatibility = (userA, userB) => {
         }
     }
 
+    const normalizedScore = Math.min(Math.max(score, 0), 99);
+    const topReasons = reasons.slice(0, 3);
+
     return {
-        score: Math.min(Math.max(score, 0), 99),
-        reasons: reasons.slice(0, 3),
+        score: normalizedScore,
+        reasons: topReasons,
+        interpretation: buildCompatibilityInterpretation(normalizedScore, topReasons, userA, userB),
     };
 };
 
@@ -316,6 +382,7 @@ const buildUserPayload = (
         genero_interes: user.genero_interes || '',
         hora_nacimiento: user.hora_nacimiento || '',
         lugar_nacimiento: user.lugar_nacimiento || '',
+        timezone_nacimiento: user.timezone_nacimiento || '',
         luna: user.luna || 'Desconocido',
         ascendente: user.ascendente || 'Desconocido',
         venus: user.venus || 'Desconocido',
@@ -323,6 +390,7 @@ const buildUserPayload = (
         bio: user.bio || '',
         ocupacion: user.ocupacion || '',
         educacion: user.educacion || '',
+        prompts: parsePromptInput(user.prompts),
         edad_min_pref: sanitizeInteger(user.edad_min_pref, 18),
         edad_max_pref: sanitizeInteger(user.edad_max_pref, 99),
         distancia_max_km: sanitizeDistance(user.distancia_max_km, 50),
@@ -333,6 +401,7 @@ const buildUserPayload = (
         push_token: includePrivateContact ? user.push_token || '' : '',
         compatibilidad: extras.compatibilidad ?? null,
         razon_compatibilidad: extras.razon_compatibilidad ?? [],
+        interpretacion_compatibilidad: extras.interpretacion_compatibilidad ?? null,
         distancia: extras.distancia ?? null,
     };
 };
@@ -344,12 +413,14 @@ const buildProfilePayload = (body) => {
     const birthInfo = obtenerSignoYFoto(body.fecha_nacimiento);
     const generacion = obtenerGeneracion(body.fecha_nacimiento);
     const rawPhotos = normalizePhotoInput(body);
+    const prompts = parsePromptInput(body.prompts);
     const fotos = rawPhotos.length > 0 ? rawPhotos : [birthInfo.fotoFallback];
     const consentimientoUbicacion = sanitizeBoolean(body.consentimiento_ubicacion, false);
     const latitud = consentimientoUbicacion && body.latitud !== null && body.latitud !== undefined ? Number(body.latitud) : null;
     const longitud = consentimientoUbicacion && body.longitud !== null && body.longitud !== undefined ? Number(body.longitud) : null;
     const latitudNacimiento = body.latitud_nacimiento !== null && body.latitud_nacimiento !== undefined ? Number(body.latitud_nacimiento) : null;
     const longitudNacimiento = body.longitud_nacimiento !== null && body.longitud_nacimiento !== undefined ? Number(body.longitud_nacimiento) : null;
+    const timezoneNacimiento = resolveBirthTimezone(body);
     const cartaLatitud = Number.isFinite(latitudNacimiento) ? latitudNacimiento : latitud;
     const cartaLongitud = Number.isFinite(longitudNacimiento) ? longitudNacimiento : longitud;
 
@@ -359,7 +430,7 @@ const buildProfilePayload = (body) => {
     let marte = 'Desconocido';
 
     if (body.fecha_nacimiento && body.hora_nacimiento) {
-        const carta = calcularCartaAstral(body.fecha_nacimiento, body.hora_nacimiento, cartaLatitud, cartaLongitud);
+        const carta = calcularCartaAstral(body.fecha_nacimiento, body.hora_nacimiento, cartaLatitud, cartaLongitud, timezoneNacimiento);
         luna = carta.luna;
         ascendente = carta.ascendente;
         venus = carta.venus;
@@ -385,6 +456,7 @@ const buildProfilePayload = (body) => {
         longitud,
         hora_nacimiento: `${body.hora_nacimiento || ''}`.trim(),
         lugar_nacimiento: `${body.lugar_nacimiento || ''}`.trim(),
+        timezone_nacimiento: timezoneNacimiento,
         latitud_nacimiento: Number.isFinite(latitudNacimiento) ? latitudNacimiento : null,
         longitud_nacimiento: Number.isFinite(longitudNacimiento) ? longitudNacimiento : null,
         luna,
@@ -394,6 +466,7 @@ const buildProfilePayload = (body) => {
         bio: `${body.bio || ''}`.trim(),
         ocupacion: `${body.ocupacion || ''}`.trim(),
         educacion: `${body.educacion || ''}`.trim(),
+        prompts: JSON.stringify(prompts),
         edad_min_pref: sanitizeInteger(body.edad_min_pref, 18),
         edad_max_pref: sanitizeInteger(body.edad_max_pref, 99),
         distancia_max_km: sanitizeDistance(body.distancia_max_km, 50),
@@ -605,6 +678,7 @@ const notifyRecipientIfNeeded = async (message) => {
             longitud REAL,
             hora_nacimiento TEXT,
             lugar_nacimiento TEXT,
+            timezone_nacimiento TEXT DEFAULT '',
             latitud_nacimiento REAL,
             longitud_nacimiento REAL,
             luna TEXT,
@@ -614,6 +688,7 @@ const notifyRecipientIfNeeded = async (message) => {
             bio TEXT DEFAULT '',
             ocupacion TEXT DEFAULT '',
             educacion TEXT DEFAULT '',
+            prompts TEXT DEFAULT '[]',
             edad_min_pref INTEGER DEFAULT 18,
             edad_max_pref INTEGER DEFAULT 99,
             distancia_max_km INTEGER DEFAULT 50,
@@ -684,7 +759,9 @@ const notifyRecipientIfNeeded = async (message) => {
         "ALTER TABLE usuarios ADD COLUMN perfil_activo INTEGER DEFAULT 1;",
         "ALTER TABLE usuarios ADD COLUMN latitud_nacimiento REAL;",
         "ALTER TABLE usuarios ADD COLUMN longitud_nacimiento REAL;",
+        "ALTER TABLE usuarios ADD COLUMN timezone_nacimiento TEXT DEFAULT '';",
         "ALTER TABLE usuarios ADD COLUMN push_token TEXT DEFAULT '';",
+        "ALTER TABLE usuarios ADD COLUMN prompts TEXT DEFAULT '[]';",
         "ALTER TABLE sincronias ADD COLUMN tipo TEXT DEFAULT 'like';",
     ];
 
@@ -829,17 +906,17 @@ app.post('/registrar-cronos', async (req, res) => {
                 `UPDATE usuarios
                  SET nombre = ?, fecha_nacimiento = ?, generacion = ?, signo_zodiacal = ?, foto = ?, fotos = ?, fotos_moderadas = ?, ubicacion = ?, gustos = ?,
                      metodo_registro = ?, correo = ?, telefono = ?, intencion = ?, genero = ?, genero_interes = ?, latitud = ?, longitud = ?,
-                     hora_nacimiento = ?, lugar_nacimiento = ?, latitud_nacimiento = ?, longitud_nacimiento = ?, luna = ?, ascendente = ?, venus = ?, marte = ?, bio = ?, ocupacion = ?,
-                     educacion = ?, edad_min_pref = ?, edad_max_pref = ?, distancia_max_km = ?, mostrar_edad = ?, mostrar_distancia = ?,
+                     hora_nacimiento = ?, lugar_nacimiento = ?, timezone_nacimiento = ?, latitud_nacimiento = ?, longitud_nacimiento = ?, luna = ?, ascendente = ?, venus = ?, marte = ?, bio = ?, ocupacion = ?,
+                     educacion = ?, prompts = ?, edad_min_pref = ?, edad_max_pref = ?, distancia_max_km = ?, mostrar_edad = ?, mostrar_distancia = ?,
                      consentimiento_ubicacion = ?, perfil_activo = ?, ultima_sesion = CURRENT_TIMESTAMP
                  WHERE id = ?`,
                 [
                     profile.nombre, profile.fecha_nacimiento, profile.generacion, profile.signo_zodiacal, profile.foto, profile.fotos,
                     getRetainedModeratedPhotos(existing, parseJsonArray(profile.fotos)),
                     profile.ubicacion, profile.gustos, profile.metodo_registro, profile.correo, profile.telefono, profile.intencion,
-                    profile.genero, profile.genero_interes, profile.latitud, profile.longitud, profile.hora_nacimiento, profile.lugar_nacimiento,
+                    profile.genero, profile.genero_interes, profile.latitud, profile.longitud, profile.hora_nacimiento, profile.lugar_nacimiento, profile.timezone_nacimiento,
                     profile.latitud_nacimiento, profile.longitud_nacimiento,
-                    profile.luna, profile.ascendente, profile.venus, profile.marte, profile.bio, profile.ocupacion, profile.educacion,
+                    profile.luna, profile.ascendente, profile.venus, profile.marte, profile.bio, profile.ocupacion, profile.educacion, profile.prompts,
                     profile.edad_min_pref, profile.edad_max_pref, profile.distancia_max_km, profile.mostrar_edad, profile.mostrar_distancia,
                     profile.consentimiento_ubicacion, profile.perfil_activo, existing.id,
                 ]
@@ -852,16 +929,16 @@ app.post('/registrar-cronos', async (req, res) => {
         const insertResult = await db.run(
             `INSERT INTO usuarios (
                 nombre, fecha_nacimiento, generacion, signo_zodiacal, foto, fotos, fotos_moderadas, ubicacion, gustos, metodo_registro, correo, telefono,
-                intencion, genero, genero_interes, latitud, longitud, hora_nacimiento, lugar_nacimiento, latitud_nacimiento, longitud_nacimiento, luna, ascendente, venus, marte,
-                bio, ocupacion, educacion, edad_min_pref, edad_max_pref, distancia_max_km, mostrar_edad, mostrar_distancia,
+                intencion, genero, genero_interes, latitud, longitud, hora_nacimiento, lugar_nacimiento, timezone_nacimiento, latitud_nacimiento, longitud_nacimiento, luna, ascendente, venus, marte,
+                bio, ocupacion, educacion, prompts, edad_min_pref, edad_max_pref, distancia_max_km, mostrar_edad, mostrar_distancia,
                 consentimiento_ubicacion, perfil_activo, push_token, ultima_sesion
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
             [
                 profile.nombre, profile.fecha_nacimiento, profile.generacion, profile.signo_zodiacal, profile.foto, profile.fotos, '[]',
                 profile.ubicacion, profile.gustos, profile.metodo_registro, profile.correo, profile.telefono, profile.intencion,
-                profile.genero, profile.genero_interes, profile.latitud, profile.longitud, profile.hora_nacimiento, profile.lugar_nacimiento,
+                profile.genero, profile.genero_interes, profile.latitud, profile.longitud, profile.hora_nacimiento, profile.lugar_nacimiento, profile.timezone_nacimiento,
                 profile.latitud_nacimiento, profile.longitud_nacimiento,
-                profile.luna, profile.ascendente, profile.venus, profile.marte, profile.bio, profile.ocupacion, profile.educacion,
+                profile.luna, profile.ascendente, profile.venus, profile.marte, profile.bio, profile.ocupacion, profile.educacion, profile.prompts,
                 profile.edad_min_pref, profile.edad_max_pref, profile.distancia_max_km, profile.mostrar_edad, profile.mostrar_distancia,
                 profile.consentimiento_ubicacion, profile.perfil_activo, '',
             ]
@@ -968,17 +1045,17 @@ app.put('/perfil/:id', async (req, res) => {
             `UPDATE usuarios
              SET nombre = ?, fecha_nacimiento = ?, generacion = ?, signo_zodiacal = ?, foto = ?, fotos = ?, fotos_moderadas = ?, ubicacion = ?, gustos = ?,
                  metodo_registro = ?, correo = ?, telefono = ?, intencion = ?, genero = ?, genero_interes = ?, latitud = ?, longitud = ?,
-                 hora_nacimiento = ?, lugar_nacimiento = ?, latitud_nacimiento = ?, longitud_nacimiento = ?, luna = ?, ascendente = ?, venus = ?, marte = ?, bio = ?, ocupacion = ?,
-                 educacion = ?, edad_min_pref = ?, edad_max_pref = ?, distancia_max_km = ?, mostrar_edad = ?, mostrar_distancia = ?,
+                 hora_nacimiento = ?, lugar_nacimiento = ?, timezone_nacimiento = ?, latitud_nacimiento = ?, longitud_nacimiento = ?, luna = ?, ascendente = ?, venus = ?, marte = ?, bio = ?, ocupacion = ?,
+                 educacion = ?, prompts = ?, edad_min_pref = ?, edad_max_pref = ?, distancia_max_km = ?, mostrar_edad = ?, mostrar_distancia = ?,
                  consentimiento_ubicacion = ?, perfil_activo = ?, ultima_sesion = CURRENT_TIMESTAMP
              WHERE id = ?`,
             [
                 profile.nombre, profile.fecha_nacimiento, profile.generacion, profile.signo_zodiacal, profile.foto, profile.fotos,
                 getRetainedModeratedPhotos(current, parseJsonArray(profile.fotos)),
                 profile.ubicacion, profile.gustos, profile.metodo_registro, profile.correo, profile.telefono, profile.intencion,
-                profile.genero, profile.genero_interes, profile.latitud, profile.longitud, profile.hora_nacimiento, profile.lugar_nacimiento,
+                profile.genero, profile.genero_interes, profile.latitud, profile.longitud, profile.hora_nacimiento, profile.lugar_nacimiento, profile.timezone_nacimiento,
                 profile.latitud_nacimiento, profile.longitud_nacimiento,
-                profile.luna, profile.ascendente, profile.venus, profile.marte, profile.bio, profile.ocupacion, profile.educacion,
+                profile.luna, profile.ascendente, profile.venus, profile.marte, profile.bio, profile.ocupacion, profile.educacion, profile.prompts,
                 profile.edad_min_pref, profile.edad_max_pref, profile.distancia_max_km, profile.mostrar_edad, profile.mostrar_distancia,
                 profile.consentimiento_ubicacion, profile.perfil_activo, req.params.id,
             ]
@@ -1049,6 +1126,7 @@ app.get('/feed/:id', async (req, res) => {
                 return toPublicUser(candidate, {
                     compatibilidad: compatibility.score,
                     razon_compatibilidad: compatibility.reasons,
+                    interpretacion_compatibilidad: compatibility.interpretation,
                     distancia: sanitizeBoolean(candidate.mostrar_distancia, true) ? roundedDistance : null,
                 });
             })

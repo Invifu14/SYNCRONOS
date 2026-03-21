@@ -1,10 +1,15 @@
-import React, { useContext, useEffect, useState } from 'react';
-import { Alert, Image, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
+import { Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { AppContext } from '../context/AppContext';
 import AstralPickerModal from '../components/AstralPickerModal';
 import LocationSelectorModal from '../components/LocationSelectorModal';
 import PhotoSlotsEditor from '../components/PhotoSlotsEditor';
+import ProfilePhotoCarousel from '../components/ProfilePhotoCarousel';
+import ProfilePromptsEditor from '../components/ProfilePromptsEditor';
+import TimeZoneSelectorModal from '../components/TimeZoneSelectorModal';
 import { extractPhotoUrls, normalizePhotoDrafts, uploadDraftPhotos } from '../utils/photos';
+import { compactProfilePrompts, normalizeProfilePrompts } from '../utils/profilePrompts';
+import { formatTimeZoneLabel, getDefaultBirthTimeZone, inferTimeZoneFromLocationLabel } from '../utils/timezones';
 
 export default function ProfileScreen() {
   const { user, apiFetch, setUser, refreshUser, logout } = useContext(AppContext);
@@ -16,29 +21,39 @@ export default function ProfileScreen() {
   const [birthTime, setBirthTime] = useState(new Date(2000, 0, 1, 12, 0));
   const [showBirthTimePicker, setShowBirthTimePicker] = useState(false);
   const [showBirthPlaceSelector, setShowBirthPlaceSelector] = useState(false);
+  const [showBirthTimezoneSelector, setShowBirthTimezoneSelector] = useState(false);
   const [showCurrentLocationSelector, setShowCurrentLocationSelector] = useState(false);
 
   useEffect(() => {
-    if (user) {
-      const parsedBirthDate = user.fecha_nacimiento ? new Date(`${user.fecha_nacimiento}T12:00:00`) : new Date(2000, 0, 1);
-      const parsedBirthTime = user.hora_nacimiento ? new Date(`2000-01-01T${user.hora_nacimiento}:00`) : new Date(2000, 0, 1, 12, 0);
-      setDraft({
-        ...user,
-        edad_min_pref: `${user.edad_min_pref ?? 18}`,
-        edad_max_pref: `${user.edad_max_pref ?? 99}`,
-        distancia_max_km: `${user.distancia_max_km ?? 50}`,
-      });
-      setPhotoDrafts(normalizePhotoDrafts(user.fotos));
-      setBirthDate(Number.isNaN(parsedBirthDate.getTime()) ? new Date(2000, 0, 1) : parsedBirthDate);
-      setBirthTime(Number.isNaN(parsedBirthTime.getTime()) ? new Date(2000, 0, 1, 12, 0) : parsedBirthTime);
-    }
+    if (!user) return;
+
+    const parsedBirthDate = user.fecha_nacimiento ? new Date(`${user.fecha_nacimiento}T12:00:00`) : new Date(2000, 0, 1);
+    const parsedBirthTime = user.hora_nacimiento ? new Date(`2000-01-01T${user.hora_nacimiento}:00`) : new Date(2000, 0, 1, 12, 0);
+    const birthTimeZone = user.timezone_nacimiento
+      || inferTimeZoneFromLocationLabel(user.lugar_nacimiento)
+      || getDefaultBirthTimeZone();
+
+    setDraft({
+      ...user,
+      timezone_nacimiento: birthTimeZone,
+      prompts: normalizeProfilePrompts(user.prompts),
+      edad_min_pref: `${user.edad_min_pref ?? 18}`,
+      edad_max_pref: `${user.edad_max_pref ?? 99}`,
+      distancia_max_km: `${user.distancia_max_km ?? 50}`,
+    });
+    setPhotoDrafts(normalizePhotoDrafts(user.fotos));
+    setBirthDate(Number.isNaN(parsedBirthDate.getTime()) ? new Date(2000, 0, 1) : parsedBirthDate);
+    setBirthTime(Number.isNaN(parsedBirthTime.getTime()) ? new Date(2000, 0, 1, 12, 0) : parsedBirthTime);
   }, [user]);
+
+  const heroPhotos = useMemo(() => photoDrafts
+    .filter(Boolean)
+    .map((item) => item.remoteUrl || item.uri)
+    .filter(Boolean), [photoDrafts]);
 
   if (!user || !draft) {
     return null;
   }
-
-  const heroPhoto = photoDrafts.find(Boolean)?.remoteUrl || photoDrafts.find(Boolean)?.uri || draft.foto;
 
   const updateField = (key, value) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -74,14 +89,6 @@ export default function ProfileScreen() {
     return value;
   };
 
-  const openBirthDatePicker = () => {
-    setShowBirthDatePicker(true);
-  };
-
-  const openBirthTimePicker = () => {
-    setShowBirthTimePicker(true);
-  };
-
   const saveProfile = async () => {
     if (Number(draft.edad_min_pref) > Number(draft.edad_max_pref)) {
       Alert.alert('Error', 'El rango de edad no es valido.');
@@ -101,6 +108,7 @@ export default function ProfileScreen() {
         method: 'PUT',
         body: JSON.stringify({
           ...draft,
+          prompts: compactProfilePrompts(draft.prompts),
           fotos: extractPhotoUrls(uploadedDrafts),
         }),
       });
@@ -109,6 +117,7 @@ export default function ProfileScreen() {
         Alert.alert('Error', data.mensaje || 'No se pudo guardar el perfil.');
         return;
       }
+
       setUser(data.usuario);
       setPhotoDrafts(normalizePhotoDrafts(data.usuario?.fotos));
       await refreshUser();
@@ -124,24 +133,29 @@ export default function ProfileScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.heroCard}>
-        {heroPhoto ? <Image source={{ uri: heroPhoto }} style={styles.heroImage} /> : null}
+        <ProfilePhotoCarousel photos={heroPhotos.length ? heroPhotos : [draft.foto].filter(Boolean)} height={260} borderRadius={18} />
         <Text style={styles.heroTitle}>{draft.nombre}</Text>
-        <Text style={styles.heroSubtitle}>{draft.signo_zodiacal || 'Signo pendiente'} · {draft.generacion || 'Generacion pendiente'}</Text>
-        <Text style={styles.heroMeta}>{draft.intencion || 'Intencion pendiente'} · {draft.ubicacion || 'Ubicacion pendiente'}</Text>
+        <Text style={styles.heroSubtitle}>{`${draft.signo_zodiacal || 'Signo pendiente'} | ${draft.generacion || 'Generacion pendiente'}`}</Text>
+        <Text style={styles.heroMeta}>{`${draft.intencion || 'Intencion pendiente'} | ${draft.ubicacion || 'Ubicacion pendiente'}`}</Text>
       </View>
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Identidad y perfil publico</Text>
         <TextInput style={styles.input} value={draft.nombre} onChangeText={(value) => updateField('nombre', value)} placeholder="Nombre" placeholderTextColor="#666" />
-        <TouchableOpacity style={styles.dateInput} onPress={openBirthDatePicker} activeOpacity={0.85}>
+        <TouchableOpacity style={styles.dateInput} onPress={() => setShowBirthDatePicker(true)} activeOpacity={0.85}>
           <Text style={draft.fecha_nacimiento ? styles.dateValue : styles.datePlaceholder}>{formatDateLabel(draft.fecha_nacimiento)}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.dateInput} onPress={openBirthTimePicker} activeOpacity={0.85}>
+        <TouchableOpacity style={styles.dateInput} onPress={() => setShowBirthTimePicker(true)} activeOpacity={0.85}>
           <Text style={draft.hora_nacimiento ? styles.dateValue : styles.datePlaceholder}>{formatTimeLabel(draft.hora_nacimiento)}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.dateInput} onPress={() => setShowBirthPlaceSelector(true)} activeOpacity={0.85}>
           <Text style={draft.lugar_nacimiento ? styles.dateValue : styles.datePlaceholder}>
             {formatLocationLabel(draft.lugar_nacimiento, 'Selecciona tu lugar de nacimiento')}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.dateInput} onPress={() => setShowBirthTimezoneSelector(true)} activeOpacity={0.85}>
+          <Text style={draft.timezone_nacimiento ? styles.dateValue : styles.datePlaceholder}>
+            {formatTimeZoneLabel(draft.timezone_nacimiento)}
           </Text>
         </TouchableOpacity>
         <TextInput style={styles.input} value={draft.bio} onChangeText={(value) => updateField('bio', value)} placeholder="Bio" placeholderTextColor="#666" multiline />
@@ -153,6 +167,7 @@ export default function ProfileScreen() {
             {formatLocationLabel(draft.ubicacion, 'Selecciona tu ciudad actual')}
           </Text>
         </TouchableOpacity>
+
         <PhotoSlotsEditor
           title="Fotos reales"
           helperText="Puedes actualizar tus fotos desde la galeria o la camara. Si una foto recibe varios reportes, se ocultara del feed."
@@ -160,6 +175,14 @@ export default function ProfileScreen() {
           onChange={setPhotoDrafts}
           disabled={saving}
           moderatedUrls={draft.fotos_moderadas || []}
+        />
+
+        <ProfilePromptsEditor
+          title="Tus datos curiosos"
+          helperText="Cuentanos algunos datos para conocerte mejor."
+          prompts={draft.prompts}
+          onChange={(value) => updateField('prompts', value)}
+          disabled={saving}
         />
       </View>
 
@@ -190,10 +213,11 @@ export default function ProfileScreen() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Carta astral</Text>
-        <Text style={styles.infoLine}>Luna: {draft.luna || 'Desconocido'}</Text>
-        <Text style={styles.infoLine}>Ascendente: {draft.ascendente || 'Desconocido'}</Text>
-        <Text style={styles.infoLine}>Venus: {draft.venus || 'Desconocido'}</Text>
-        <Text style={styles.infoLine}>Marte: {draft.marte || 'Desconocido'}</Text>
+        <Text style={styles.infoLine}>{`Zona horaria: ${formatTimeZoneLabel(draft.timezone_nacimiento)}`}</Text>
+        <Text style={styles.infoLine}>{`Luna: ${draft.luna || 'Desconocido'}`}</Text>
+        <Text style={styles.infoLine}>{`Ascendente: ${draft.ascendente || 'Desconocido'}`}</Text>
+        <Text style={styles.infoLine}>{`Venus: ${draft.venus || 'Desconocido'}`}</Text>
+        <Text style={styles.infoLine}>{`Marte: ${draft.marte || 'Desconocido'}`}</Text>
       </View>
 
       <TouchableOpacity style={styles.saveButton} onPress={saveProfile} disabled={saving}>
@@ -241,7 +265,21 @@ export default function ProfileScreen() {
           updateField('lugar_nacimiento', location.label);
           updateField('latitud_nacimiento', location.latitude);
           updateField('longitud_nacimiento', location.longitude);
+          const inferredTimezone = inferTimeZoneFromLocationLabel(location.label);
+          if (inferredTimezone) {
+            updateField('timezone_nacimiento', inferredTimezone);
+          }
         }}
+      />
+
+      <TimeZoneSelectorModal
+        visible={showBirthTimezoneSelector}
+        title="Actualiza tu zona horaria de nacimiento"
+        helperText="La hora y la zona correcta hacen que tu lectura astral sea mucho mas precisa."
+        currentValue={draft.timezone_nacimiento}
+        suggestedValue={inferTimeZoneFromLocationLabel(draft.lugar_nacimiento)}
+        onClose={() => setShowBirthTimezoneSelector(false)}
+        onSelect={(value) => updateField('timezone_nacimiento', value)}
       />
 
       <LocationSelectorModal
@@ -275,8 +313,7 @@ const styles = StyleSheet.create({
     borderColor: '#1a1a3a',
     marginBottom: 20,
   },
-  heroImage: { width: '100%', height: 220, borderRadius: 18, marginBottom: 16 },
-  heroTitle: { color: '#fff', fontSize: 28, fontWeight: '700' },
+  heroTitle: { color: '#fff', fontSize: 28, fontWeight: '700', marginTop: 16 },
   heroSubtitle: { color: '#D4AF37', fontSize: 16, fontWeight: '600', marginTop: 8 },
   heroMeta: { color: '#aaa', fontSize: 14, marginTop: 8 },
   section: {

@@ -1,13 +1,64 @@
-import React, { useCallback, useContext, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useContext, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { AppContext } from '../context/AppContext';
+import ProfileDetailModal from '../components/ProfileDetailModal';
+import ProfilePhotoCarousel from '../components/ProfilePhotoCarousel';
 
 const { height } = Dimensions.get('window');
+
+const getProfilePhotos = (profile) => {
+  const sourcePhotos = profile?.fotos_visibles?.length
+    ? profile.fotos_visibles
+    : profile?.fotos?.length
+      ? profile.fotos
+      : profile?.foto
+        ? [profile.foto]
+        : [];
+
+  return [...new Set(sourcePhotos.filter(Boolean))];
+};
+
+function SuggestionCard({ profile, onOpen }) {
+  const photos = useMemo(() => getProfilePhotos(profile), [profile]);
+
+  return (
+    <View style={styles.cardShell}>
+      <ProfilePhotoCarousel photos={photos} height={height * 0.62} borderRadius={20}>
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{`${profile.compatibilidad ?? 0}% afinidad`}</Text>
+        </View>
+        <View style={styles.cardInfo}>
+          <Text style={styles.cardTitle}>
+            {profile.nombre}
+            {profile.mostrar_edad === false ? '' : `, ${profile.edad ?? '?'}`}
+          </Text>
+          <Text style={styles.cardGeneracion}>
+            {profile.generacion || 'Generacion'}
+            {profile.distancia !== null ? ` | ${profile.distancia} km` : ''}
+          </Text>
+          <Text style={styles.cardSigno}>
+            {`Sol ${profile.signo_zodiacal || '?'} | Luna ${profile.luna || '?'} | Venus ${profile.venus || '?'}`}
+          </Text>
+          {profile.interpretacion_compatibilidad?.title ? (
+            <Text style={styles.cardHighlight}>{profile.interpretacion_compatibilidad.title}</Text>
+          ) : null}
+          {profile.interpretacion_compatibilidad?.summary ? (
+            <Text style={styles.cardBio}>{profile.interpretacion_compatibilidad.summary}</Text>
+          ) : profile.bio ? <Text style={styles.cardBio}>{profile.bio}</Text> : null}
+          <TouchableOpacity style={styles.detailButton} onPress={onOpen}>
+            <Text style={styles.detailButtonText}>Ver compatibilidad completa</Text>
+          </TouchableOpacity>
+        </View>
+      </ProfilePhotoCarousel>
+    </View>
+  );
+}
 
 export default function SuggestionsScreen() {
   const [sugerencias, setSugerencias] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [detailVisible, setDetailVisible] = useState(false);
   const { user, apiFetch } = useContext(AppContext);
 
   const fetchSugerencias = useCallback(async () => {
@@ -41,6 +92,7 @@ export default function SuggestionsScreen() {
         body: JSON.stringify({ mi_id: user.id, destino_id: sugerenciaActual.id, tipo }),
       });
       const data = await response.json();
+      setDetailVisible(false);
       setSugerencias((current) => current.slice(1));
       if (data.match) {
         Alert.alert('Es match', `Tu y ${sugerenciaActual.nombre} ahora pueden chatear en Conexiones.`);
@@ -91,34 +143,7 @@ export default function SuggestionsScreen() {
         </View>
       ) : (
         <>
-          <View style={styles.card}>
-            {sugerenciaActual.foto ? (
-              <Image source={{ uri: sugerenciaActual.foto }} style={styles.cardImage} />
-            ) : (
-              <View style={styles.cardFallback}>
-                <Text style={styles.cardFallbackText}>Sin foto visible</Text>
-              </View>
-            )}
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{sugerenciaActual.compatibilidad ?? 0}% afinidad</Text>
-            </View>
-            <View style={styles.cardInfo}>
-              <Text style={styles.cardTitle}>
-                {sugerenciaActual.nombre}
-                {sugerenciaActual.mostrar_edad === false ? '' : `, ${sugerenciaActual.edad ?? '?'}`}
-              </Text>
-              <Text style={styles.cardGeneracion}>
-                {sugerenciaActual.generacion || 'Generacion'}{sugerenciaActual.distancia !== null ? ` · ${sugerenciaActual.distancia} km` : ''}
-              </Text>
-              <Text style={styles.cardSigno}>
-                Sol {sugerenciaActual.signo_zodiacal || '?'} · Luna {sugerenciaActual.luna || '?'} · Venus {sugerenciaActual.venus || '?'}
-              </Text>
-              {sugerenciaActual.bio ? <Text style={styles.cardBio}>{sugerenciaActual.bio}</Text> : null}
-              {sugerenciaActual.razon_compatibilidad?.map((reason) => (
-                <Text key={reason} style={styles.reasonItem}>• {reason}</Text>
-              ))}
-            </View>
-          </View>
+          <SuggestionCard profile={sugerenciaActual} onOpen={() => setDetailVisible(true)} />
 
           <View style={styles.actionsRow}>
             <TouchableOpacity style={[styles.actionButton, styles.passButton]} onPress={() => handleDecision('dislike')}>
@@ -134,6 +159,12 @@ export default function SuggestionsScreen() {
           </TouchableOpacity>
         </>
       )}
+
+      <ProfileDetailModal
+        visible={detailVisible}
+        profile={sugerenciaActual}
+        onClose={() => setDetailVisible(false)}
+      />
     </View>
   );
 }
@@ -156,24 +187,10 @@ const styles = StyleSheet.create({
   emptyText: { color: '#ccc', textAlign: 'center', fontSize: 16, marginBottom: 20 },
   refreshButton: { backgroundColor: '#1a1a3a', paddingVertical: 14, paddingHorizontal: 20, borderRadius: 14 },
   refreshText: { color: '#D4AF37', fontWeight: '700' },
-  card: {
+  cardShell: {
     borderRadius: 20,
-    backgroundColor: '#11112e',
-    borderColor: '#D4AF37',
-    borderWidth: 1,
-    justifyContent: 'flex-end',
     overflow: 'hidden',
-    height: height * 0.62,
-    position: 'relative',
   },
-  cardFallback: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#11112e',
-  },
-  cardFallbackText: { color: '#d0d0de', fontSize: 18, fontWeight: '700' },
-  cardImage: { width: '100%', height: '100%', position: 'absolute' },
   badge: {
     position: 'absolute',
     top: 16,
@@ -190,8 +207,19 @@ const styles = StyleSheet.create({
   cardTitle: { color: '#fff', fontSize: 26, fontWeight: '700' },
   cardGeneracion: { color: '#ccc', fontSize: 14, marginTop: 6 },
   cardSigno: { color: '#D4AF37', fontSize: 15, marginTop: 6, fontWeight: '700', lineHeight: 20 },
+  cardHighlight: { color: '#f1dfa2', fontSize: 14, fontWeight: '700', marginTop: 10 },
   cardBio: { color: '#fff', fontSize: 14, lineHeight: 20, marginTop: 10 },
-  reasonItem: { color: '#f1dfa2', marginTop: 8, fontSize: 13 },
+  detailButton: {
+    marginTop: 14,
+    alignSelf: 'flex-start',
+    backgroundColor: '#171736',
+    borderWidth: 1,
+    borderColor: '#2a2a4c',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  detailButtonText: { color: '#fff', fontWeight: '700' },
   actionsRow: { flexDirection: 'row', gap: 12, marginTop: 18 },
   actionButton: {
     flex: 1,

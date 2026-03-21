@@ -1,43 +1,54 @@
-import React, { useCallback, useContext, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useContext, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { AppContext } from '../context/AppContext';
+import ProfileDetailModal from '../components/ProfileDetailModal';
+import ProfilePhotoCarousel from '../components/ProfilePhotoCarousel';
 
 const { height } = Dimensions.get('window');
 
-function ProfileCard({ profile, title, subtitle }) {
+const getProfilePhotos = (profile) => {
+  const sourcePhotos = profile?.fotos_visibles?.length
+    ? profile.fotos_visibles
+    : profile?.fotos?.length
+      ? profile.fotos
+      : profile?.foto
+        ? [profile.foto]
+        : [];
+
+  return [...new Set(sourcePhotos.filter(Boolean))];
+};
+
+function ProfileCard({ profile, onOpen }) {
+  const photos = useMemo(() => getProfilePhotos(profile), [profile]);
+  const subtitle = `${profile.signo_zodiacal || 'Signo'} | ${profile.intencion || 'Sin intencion visible'}`;
+  const locationLine = `${profile.ubicacion || 'Ubicacion privada'}${profile.distancia !== null ? ` | ${profile.distancia} km` : ''}`;
+
   return (
-    <View style={styles.card}>
-      {profile.foto ? (
-        <Image source={{ uri: profile.foto }} style={styles.cardImage} />
-      ) : (
-        <View style={styles.cardFallback}>
-          <Text style={styles.cardFallbackText}>Sin foto visible</Text>
+    <View style={styles.cardShell}>
+      <ProfilePhotoCarousel photos={photos} height={height * 0.62} borderRadius={20}>
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{`${profile.compatibilidad ?? 0}% match`}</Text>
         </View>
-      )}
-      <View style={styles.badge}>
-        <Text style={styles.badgeText}>{profile.compatibilidad ?? 0}% match</Text>
-      </View>
-      <View style={styles.cardInfo}>
-        <Text style={styles.cardTitle}>
-          {profile.nombre}
-          {profile.mostrar_edad === false ? '' : `, ${profile.edad ?? '?'}`}
-        </Text>
-        <Text style={styles.cardSubtitle}>{title}</Text>
-        <Text style={styles.cardText}>{subtitle}</Text>
-        {profile.bio ? <Text style={styles.cardBio}>{profile.bio}</Text> : null}
-        {profile.ocupacion || profile.educacion ? (
-          <Text style={styles.cardMeta}>{[profile.ocupacion, profile.educacion].filter(Boolean).join(' · ')}</Text>
-        ) : null}
-        {profile.gustos ? <Text style={styles.cardMeta}>{profile.gustos}</Text> : null}
-        {profile.razon_compatibilidad?.length ? (
-          <View style={styles.reasonList}>
-            {profile.razon_compatibilidad.map((reason) => (
-              <Text key={reason} style={styles.reasonItem}>• {reason}</Text>
-            ))}
-          </View>
-        ) : null}
-      </View>
+        <View style={styles.cardInfo}>
+          <Text style={styles.cardTitle}>
+            {profile.nombre}
+            {profile.mostrar_edad === false ? '' : `, ${profile.edad ?? '?'}`}
+          </Text>
+          <Text style={styles.cardSubtitle}>{locationLine}</Text>
+          <Text style={styles.cardText}>{subtitle}</Text>
+          {profile.bio ? <Text style={styles.cardBio}>{profile.bio}</Text> : null}
+          {profile.interpretacion_compatibilidad?.title ? (
+            <Text style={styles.cardHighlight}>{profile.interpretacion_compatibilidad.title}</Text>
+          ) : null}
+          {profile.razon_compatibilidad?.length ? (
+            <Text style={styles.cardReason}>{profile.razon_compatibilidad[0]}</Text>
+          ) : null}
+          <TouchableOpacity style={styles.detailButton} onPress={onOpen}>
+            <Text style={styles.detailButtonText}>Ver perfil completo</Text>
+          </TouchableOpacity>
+        </View>
+      </ProfilePhotoCarousel>
     </View>
   );
 }
@@ -45,6 +56,7 @@ function ProfileCard({ profile, title, subtitle }) {
 export default function MainScreen() {
   const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [detailVisible, setDetailVisible] = useState(false);
   const { user, apiFetch } = useContext(AppContext);
 
   const fetchUsuarios = useCallback(async () => {
@@ -78,6 +90,7 @@ export default function MainScreen() {
         body: JSON.stringify({ mi_id: user.id, destino_id: usuarioActual.id, tipo }),
       });
       const data = await response.json();
+      setDetailVisible(false);
       setUsuarios((current) => current.slice(1));
       if (data.match) {
         Alert.alert('Es match', `Tu y ${usuarioActual.nombre} ahora pueden chatear en Conexiones.`);
@@ -94,7 +107,8 @@ export default function MainScreen() {
       block: 'Bloquear',
       report: 'Reportar',
     };
-    Alert.alert(labels[accion], `¿Quieres ${labels[accion].toLowerCase()} a ${usuarioActual.nombre}?`, [
+
+    Alert.alert(labels[accion], `Quieres ${labels[accion].toLowerCase()} a ${usuarioActual.nombre}?`, [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: labels[accion],
@@ -105,6 +119,7 @@ export default function MainScreen() {
               method: 'POST',
               body: JSON.stringify({ mi_id: user.id, destino_id: usuarioActual.id, accion, motivo: `Accion desde radar: ${accion}` }),
             });
+            setDetailVisible(false);
             setUsuarios((current) => current.slice(1));
           } catch (error) {
             console.error('Error en moderacion', error);
@@ -120,7 +135,7 @@ export default function MainScreen() {
       return;
     }
 
-    Alert.alert('Reportar foto', `¿Quieres reportar la foto principal de ${usuarioActual.nombre}?`, [
+    Alert.alert('Reportar foto', `Quieres reportar la foto principal de ${usuarioActual.nombre}?`, [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Reportar',
@@ -164,11 +179,7 @@ export default function MainScreen() {
         </View>
       ) : (
         <>
-          <ProfileCard
-            profile={usuarioActual}
-            title={`${usuarioActual.ubicacion || 'Ubicacion privada'}${usuarioActual.distancia !== null ? ` · ${usuarioActual.distancia} km` : ''}`}
-            subtitle={`${usuarioActual.signo_zodiacal || 'Signo'} · ${usuarioActual.intencion || 'Sin intencion visible'}`}
-          />
+          <ProfileCard profile={usuarioActual} onOpen={() => setDetailVisible(true)} />
 
           <View style={styles.actionsRow}>
             <TouchableOpacity style={[styles.actionButton, styles.passButton]} onPress={() => handleDecision('dislike')}>
@@ -195,6 +206,12 @@ export default function MainScreen() {
           </View>
         </>
       )}
+
+      <ProfileDetailModal
+        visible={detailVisible}
+        profile={usuarioActual}
+        onClose={() => setDetailVisible(false)}
+      />
     </View>
   );
 }
@@ -217,24 +234,10 @@ const styles = StyleSheet.create({
   emptyText: { color: '#ccc', textAlign: 'center', fontSize: 16, marginBottom: 20 },
   refreshButton: { backgroundColor: '#1a1a3a', paddingVertical: 14, paddingHorizontal: 20, borderRadius: 14 },
   refreshText: { color: '#D4AF37', fontWeight: '700' },
-  card: {
+  cardShell: {
     borderRadius: 20,
-    backgroundColor: '#11112e',
-    borderColor: '#D4AF37',
-    borderWidth: 1,
-    justifyContent: 'flex-end',
     overflow: 'hidden',
-    height: height * 0.62,
-    position: 'relative',
   },
-  cardFallback: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#11112e',
-  },
-  cardFallbackText: { color: '#d0d0de', fontSize: 18, fontWeight: '700' },
-  cardImage: { width: '100%', height: '100%', position: 'absolute' },
   badge: {
     position: 'absolute',
     top: 16,
@@ -247,14 +250,24 @@ const styles = StyleSheet.create({
     borderColor: '#D4AF37',
   },
   badgeText: { color: '#D4AF37', fontSize: 12, fontWeight: '700' },
-  cardInfo: { padding: 20, backgroundColor: 'rgba(5, 5, 16, 0.83)' },
+  cardInfo: { padding: 20, backgroundColor: 'rgba(5, 5, 16, 0.84)' },
   cardTitle: { color: '#fff', fontSize: 26, fontWeight: '700' },
   cardSubtitle: { color: '#D4AF37', fontSize: 15, marginTop: 4, fontWeight: '700' },
   cardText: { color: '#d6d6df', fontSize: 14, marginTop: 6 },
   cardBio: { color: '#fff', fontSize: 14, lineHeight: 20, marginTop: 10 },
-  cardMeta: { color: '#adadc2', marginTop: 8, fontSize: 13 },
-  reasonList: { marginTop: 12 },
-  reasonItem: { color: '#f2e4a5', marginTop: 4, fontSize: 13 },
+  cardHighlight: { color: '#f1dfa2', fontSize: 14, fontWeight: '700', marginTop: 10 },
+  cardReason: { color: '#ececf8', marginTop: 8, lineHeight: 20 },
+  detailButton: {
+    marginTop: 14,
+    alignSelf: 'flex-start',
+    backgroundColor: '#171736',
+    borderWidth: 1,
+    borderColor: '#2a2a4c',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  detailButtonText: { color: '#fff', fontWeight: '700' },
   actionsRow: { flexDirection: 'row', gap: 12, marginTop: 18 },
   actionButton: {
     flex: 1,
