@@ -64,7 +64,7 @@ function WizardCard({
   );
 }
 
-export default function AuthScreen() {
+export default function AuthScreen({ navigation, route }) {
   const [step, setStep] = useState('method_selection');
   const [profileStepIndex, setProfileStepIndex] = useState(0);
 
@@ -116,6 +116,8 @@ export default function AuthScreen() {
   const [creatingProfile, setCreatingProfile] = useState(false);
   const stepAnimation = useRef(new Animated.Value(1)).current;
   const { baseUrl, completeLogin } = useContext(AppContext);
+  const authMode = route?.params?.mode === 'login' ? 'login' : 'register';
+  const isLoginMode = authMode === 'login';
 
   const formatDate = (date) => {
     const year = date.getFullYear();
@@ -436,6 +438,15 @@ export default function AuthScreen() {
     }).start();
   }, [profileStepIndex, step, stepAnimation]);
 
+  useEffect(() => {
+    setStep('method_selection');
+    setMetodoRegistro('');
+    setCorreo('');
+    setTelefono('');
+    setCodigo('');
+    setCreatingProfile(false);
+  }, [authMode]);
+
   const enviarCodigo = () => {
     if (metodoRegistro === 'correo' && !correo.trim()) {
       Alert.alert('Error', 'El correo es obligatorio.');
@@ -455,8 +466,37 @@ export default function AuthScreen() {
       return;
     }
 
+    if (isLoginMode) {
+      iniciarSesion();
+      return;
+    }
+
     setProfileStepIndex(0);
     setStep('profile_wizard');
+  };
+
+  const iniciarSesion = async () => {
+    try {
+      const response = await fetch(`${baseUrl}/login-cronos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          correo,
+          telefono,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        Alert.alert('Error', data.mensaje || 'No se pudo iniciar sesion.');
+        return;
+      }
+
+      await completeLogin(data.usuario, data.token);
+    } catch (error) {
+      console.error(error);
+      Alert.alert('Error', 'No se pudo conectar con el servidor.');
+    }
   };
 
   const goToNextProfileStep = () => {
@@ -588,12 +628,15 @@ export default function AuthScreen() {
 
   const renderMethodSelection = () => (
     <View style={styles.card}>
-      <Text style={styles.title}>Elige tu metodo de registro</Text>
+      <Text style={styles.title}>{isLoginMode ? 'Elige como quieres iniciar sesion' : 'Elige tu metodo de registro'}</Text>
       <TouchableOpacity style={styles.primaryButton} onPress={() => { setMetodoRegistro('correo'); setStep('enter_contact'); }}>
-        <Text style={styles.primaryButtonText}>Registrarse con correo</Text>
+        <Text style={styles.primaryButtonText}>{isLoginMode ? 'Entrar con correo' : 'Registrarse con correo'}</Text>
       </TouchableOpacity>
       <TouchableOpacity style={[styles.primaryButton, styles.secondaryButton]} onPress={() => { setMetodoRegistro('telefono'); setStep('enter_contact'); }}>
-        <Text style={styles.secondaryButtonText}>Registrarse con telefono</Text>
+        <Text style={styles.secondaryButtonText}>{isLoginMode ? 'Entrar con telefono' : 'Registrarse con telefono'}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.changeModeButton} onPress={() => navigation.goBack()}>
+        <Text style={styles.changeModeText}>Cambiar opcion</Text>
       </TouchableOpacity>
     </View>
   );
@@ -601,6 +644,7 @@ export default function AuthScreen() {
   const renderEnterContact = () => (
     <View style={styles.card}>
       <Text style={styles.title}>{metodoRegistro === 'correo' ? 'Ingresa tu correo' : 'Ingresa tu telefono'}</Text>
+      <Text style={styles.stepHelper}>{isLoginMode ? 'Usaremos este dato para encontrar tu cuenta.' : 'Lo usaremos para crear y validar tu acceso.'}</Text>
       {metodoRegistro === 'correo' ? (
         <TextInput style={styles.input} placeholder="correo@ejemplo.com" placeholderTextColor="#666" value={correo} onChangeText={setCorreo} autoCapitalize="none" keyboardType="email-address" />
       ) : (
@@ -620,14 +664,14 @@ export default function AuthScreen() {
   const renderVerifyCode = () => (
     <View style={styles.card}>
       <Text style={styles.title}>Verifica tu codigo</Text>
-      <Text style={styles.stepHelper}>Usa el codigo de prueba para avanzar al constructor de perfil.</Text>
+      <Text style={styles.stepHelper}>{isLoginMode ? 'Usa el codigo de prueba para entrar a tu cuenta.' : 'Usa el codigo de prueba para avanzar al constructor de perfil.'}</Text>
       <TextInput style={styles.input} placeholder="1234" placeholderTextColor="#666" value={codigo} onChangeText={setCodigo} keyboardType="numeric" />
       <View style={styles.footerActions}>
         <TouchableOpacity style={[styles.footerButton, styles.secondaryButton]} onPress={() => setStep('enter_contact')}>
           <Text style={styles.secondaryButtonText}>Atras</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.footerButton, styles.primaryButton]} onPress={verificarCodigo}>
-          <Text style={styles.primaryButtonText}>Construir perfil</Text>
+          <Text style={styles.primaryButtonText}>{isLoginMode ? 'Iniciar sesion' : 'Construir perfil'}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -817,6 +861,16 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: '#050510', fontWeight: '800', fontSize: 15 },
   secondaryButton: { backgroundColor: '#171736', borderWidth: 1, borderColor: '#2a2a4c' },
   secondaryButtonText: { color: '#fff', fontWeight: '700' },
+  changeModeButton: {
+    marginTop: 14,
+    alignSelf: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  changeModeText: {
+    color: '#a0a0b8',
+    fontWeight: '700',
+  },
   footerActions: {
     flexDirection: 'row',
     gap: 12,

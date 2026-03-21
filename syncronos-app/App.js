@@ -7,6 +7,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 
 import AuthScreen from './screens/AuthScreen';
+import AuthChoiceScreen from './screens/AuthChoiceScreen';
 import MainScreen from './screens/MainScreen';
 import SuggestionsScreen from './screens/SuggestionsScreen';
 import VaultScreen from './screens/VaultScreen';
@@ -112,7 +113,10 @@ function AppNavigator() {
         }}
       >
         {!user ? (
-          <Stack.Screen name="Auth" component={AuthScreen} options={{ headerShown: false }} />
+          <>
+            <Stack.Screen name="AuthChoice" component={AuthChoiceScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="Auth" component={AuthScreen} options={{ headerShown: false }} />
+          </>
         ) : (
           <>
             <Stack.Screen name="HomeTabs" component={HomeTabs} options={{ headerShown: false }} />

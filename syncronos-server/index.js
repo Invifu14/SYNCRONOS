@@ -491,6 +491,21 @@ const withSession = async (user) => {
     return { token, usuario: toOwnUser(user) };
 };
 
+const findUserByContact = async ({ correo, telefono }) => {
+    let existing = null;
+    const normalizedEmail = `${correo || ''}`.trim().toLowerCase();
+    const normalizedPhone = `${telefono || ''}`.trim();
+
+    if (normalizedEmail) {
+        existing = await db.get(`SELECT * FROM usuarios WHERE correo = ?`, [normalizedEmail]);
+    }
+    if (!existing && normalizedPhone) {
+        existing = await db.get(`SELECT * FROM usuarios WHERE telefono = ?`, [normalizedPhone]);
+    }
+
+    return existing;
+};
+
 const ensureAdult = (fechaNacimiento) => {
     const age = calculateAge(fechaNacimiento);
     return age !== null && age >= 18;
@@ -878,13 +893,7 @@ app.post('/registrar-cronos', async (req, res) => {
             return res.status(400).json({ mensaje: 'La app solo esta disponible para mayores de 18 anos' });
         }
 
-        let existing = null;
-        if (`${correo || ''}`.trim()) {
-            existing = await db.get(`SELECT * FROM usuarios WHERE correo = ?`, [`${correo}`.trim().toLowerCase()]);
-        }
-        if (!existing && `${telefono || ''}`.trim()) {
-            existing = await db.get(`SELECT * FROM usuarios WHERE telefono = ?`, [`${telefono}`.trim()]);
-        }
+        let existing = await findUserByContact({ correo, telefono });
 
         const sourceBody = existing
             ? {
@@ -950,6 +959,29 @@ app.post('/registrar-cronos', async (req, res) => {
     } catch (e) {
         console.error('Error en registro/login:', e);
         res.status(500).json({ mensaje: 'No se pudo registrar el usuario' });
+    }
+});
+
+app.post('/login-cronos', async (req, res) => {
+    try {
+        const { correo, telefono } = req.body;
+
+        if (!`${correo || ''}`.trim() && !`${telefono || ''}`.trim()) {
+            return res.status(400).json({ mensaje: 'Debes ingresar correo o telefono' });
+        }
+
+        const existing = await findUserByContact({ correo, telefono });
+        if (!existing) {
+            return res.status(404).json({ mensaje: 'No encontramos una cuenta con esos datos' });
+        }
+
+        await db.run(`UPDATE usuarios SET ultima_sesion = CURRENT_TIMESTAMP WHERE id = ?`, [existing.id]);
+        const refreshedUser = await db.get(`SELECT * FROM usuarios WHERE id = ?`, [existing.id]);
+        const session = await withSession(refreshedUser);
+        res.json({ mensaje: 'Login OK', ...session });
+    } catch (error) {
+        console.error('Error iniciando sesion:', error);
+        res.status(500).json({ mensaje: 'No se pudo iniciar sesion' });
     }
 });
 
