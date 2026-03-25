@@ -41,7 +41,11 @@ export default function ProfileDetailModal({
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
 
         <View style={styles.sheet}>
-          <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.content}
+            showsVerticalScrollIndicator={false}
+          >
             <ProfilePhotoCarousel photos={photos} height={420} borderRadius={24}>
               <View style={styles.heroOverlay}>
                 <Text style={styles.name}>
@@ -49,11 +53,11 @@ export default function ProfileDetailModal({
                   {profile.mostrar_edad === false ? '' : `, ${profile.edad ?? '?'}`}
                 </Text>
                 <Text style={styles.kicker}>
-                  {[profile.signo_zodiacal, profile.generacion, profile.intencion].filter(Boolean).join(' · ')}
+                  {[profile.signo_zodiacal, profile.generacion, profile.intencion].filter(Boolean).join(' | ')}
                 </Text>
                 <Text style={styles.location}>
                   {profile.ubicacion || 'Ubicacion privada'}
-                  {profile.distancia !== null && profile.distancia !== undefined ? ` · ${profile.distancia} km` : ''}
+                  {profile.distancia !== null && profile.distancia !== undefined ? ` | ${profile.distancia} km` : ''}
                 </Text>
               </View>
             </ProfilePhotoCarousel>
@@ -71,7 +75,7 @@ export default function ProfileDetailModal({
                   <Text style={styles.sectionText}>{profile.interpretacion_compatibilidad.summary}</Text>
                 ) : null}
                 {profile.razon_compatibilidad?.map((reason) => (
-                  <Text key={reason} style={styles.reasonItem}>{`• ${reason}`}</Text>
+                  <Text key={reason} style={styles.reasonItem}>{`- ${reason}`}</Text>
                 ))}
                 {profile.interpretacion_compatibilidad?.next_step ? (
                   <Text style={styles.nextStep}>{profile.interpretacion_compatibilidad.next_step}</Text>
@@ -84,7 +88,7 @@ export default function ProfileDetailModal({
                 <Text style={styles.sectionTitle}>Perfil</Text>
                 {profile.bio ? <Text style={styles.sectionText}>{profile.bio}</Text> : null}
                 {[profile.ocupacion, profile.educacion].filter(Boolean).length ? (
-                  <Text style={styles.metaText}>{[profile.ocupacion, profile.educacion].filter(Boolean).join(' · ')}</Text>
+                  <Text style={styles.metaText}>{[profile.ocupacion, profile.educacion].filter(Boolean).join(' | ')}</Text>
                 ) : null}
                 {profile.gustos ? <Text style={styles.metaText}>{profile.gustos}</Text> : null}
               </View>
@@ -128,7 +132,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
-    maxHeight: '92%',
+    height: '92%',
     backgroundColor: '#050510',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,

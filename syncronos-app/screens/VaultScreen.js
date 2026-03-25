@@ -1,5 +1,5 @@
 import React, { useCallback, useContext, useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ImageBackground, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { AppContext } from '../context/AppContext';
 
@@ -8,6 +8,62 @@ function SegmentButton({ active, label, onPress }) {
     <TouchableOpacity style={[styles.segmentButton, active && styles.segmentButtonActive]} onPress={onPress}>
       <Text style={[styles.segmentText, active && styles.segmentTextActive]}>{label}</Text>
     </TouchableOpacity>
+  );
+}
+
+const getConnectionPhoto = (item) => {
+  const sourcePhotos = item?.fotos_visibles?.length
+    ? item.fotos_visibles
+    : item?.fotos?.length
+      ? item.fotos
+      : item?.foto
+        ? [item.foto]
+        : [];
+
+  return sourcePhotos.find(Boolean) || null;
+};
+
+function ReceivedLikeCard({ item, onAccept }) {
+  const photo = getConnectionPhoto(item);
+  const teaserTitle = item.mostrar_edad === false ? 'Alguien especial' : `Alguien, ${item.edad ?? '?'}`;
+  const teaserMeta = [item.signo_zodiacal, item.intencion, item.distancia !== null ? `${item.distancia} km` : null]
+    .filter(Boolean)
+    .join(' | ');
+
+  const teaserContent = (
+    <View style={styles.previewScrim}>
+      <View style={styles.previewBadge}>
+        <Text style={styles.previewBadgeText}>Te dio like</Text>
+      </View>
+      <View style={styles.previewCopy}>
+        <Text style={styles.previewTitle}>{teaserTitle}</Text>
+        {teaserMeta ? <Text style={styles.previewSubtitle}>{teaserMeta}</Text> : null}
+        <Text style={styles.previewHint}>Vista previa difuminada pensada para futuras funciones premium.</Text>
+      </View>
+    </View>
+  );
+
+  return (
+    <View style={styles.previewCard}>
+      {photo ? (
+        <ImageBackground
+          source={{ uri: photo }}
+          blurRadius={28}
+          style={styles.previewHero}
+          imageStyle={styles.previewHeroImage}
+        >
+          {teaserContent}
+        </ImageBackground>
+      ) : (
+        <View style={[styles.previewHero, styles.previewFallback]}>
+          {teaserContent}
+        </View>
+      )}
+
+      <TouchableOpacity style={styles.primaryButton} onPress={onAccept}>
+        <Text style={styles.primaryButtonText}>Responder con like</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -88,36 +144,44 @@ export default function VaultScreen() {
       {list.length === 0 ? (
         <Text style={styles.emptyText}>Nada por aqui todavia.</Text>
       ) : (
-        list.map((item) => (
-          <View key={`${segment}-${item.id}`} style={[styles.card, segment === 'matches' && styles.matchCard]}>
-            <Text style={styles.cardTitle}>
-              {item.nombre}
-              {item.mostrar_edad === false ? '' : `, ${item.edad ?? '?'}`}
-            </Text>
-            <Text style={styles.cardSubtitle}>
-              {[item.signo_zodiacal, item.intencion, item.distancia !== null ? `${item.distancia} km` : null].filter(Boolean).join(' · ')}
-            </Text>
-            {item.bio ? <Text style={styles.cardText}>{item.bio}</Text> : null}
-            {segment === 'matches' ? (
-              <>
-                {item.ultimo_mensaje ? <Text style={styles.lastMessage}>{item.ultimo_mensaje}</Text> : <Text style={styles.lastMessage}>Aun no han empezado a hablar.</Text>}
-                {item.mensajes_no_leidos ? <Text style={styles.unread}>{item.mensajes_no_leidos} mensaje(s) sin leer</Text> : null}
-                <TouchableOpacity
-                  style={styles.primaryButton}
-                  onPress={() => navigation.navigate('Chat', { otherUserId: item.id, nombre: item.nombre })}
-                >
-                  <Text style={styles.primaryButtonText}>Abrir chat</Text>
-                </TouchableOpacity>
-              </>
-            ) : segment === 'likes_recibidos' ? (
-              <TouchableOpacity style={styles.primaryButton} onPress={() => acceptLike(item.id)}>
-                <Text style={styles.primaryButtonText}>Responder con like</Text>
-              </TouchableOpacity>
-            ) : (
-              <Text style={styles.pendingText}>Esperando respuesta.</Text>
-            )}
-          </View>
-        ))
+        list.map((item) => {
+          if (segment === 'likes_recibidos') {
+            return (
+              <ReceivedLikeCard
+                key={`${segment}-${item.id}`}
+                item={item}
+                onAccept={() => acceptLike(item.id)}
+              />
+            );
+          }
+
+          return (
+            <View key={`${segment}-${item.id}`} style={[styles.card, segment === 'matches' && styles.matchCard]}>
+              <Text style={styles.cardTitle}>
+                {item.nombre}
+                {item.mostrar_edad === false ? '' : `, ${item.edad ?? '?'}`}
+              </Text>
+              <Text style={styles.cardSubtitle}>
+                {[item.signo_zodiacal, item.intencion, item.distancia !== null ? `${item.distancia} km` : null].filter(Boolean).join(' | ')}
+              </Text>
+              {item.bio ? <Text style={styles.cardText}>{item.bio}</Text> : null}
+              {segment === 'matches' ? (
+                <>
+                  {item.ultimo_mensaje ? <Text style={styles.lastMessage}>{item.ultimo_mensaje}</Text> : <Text style={styles.lastMessage}>Aun no han empezado a hablar.</Text>}
+                  {item.mensajes_no_leidos ? <Text style={styles.unread}>{item.mensajes_no_leidos} mensaje(s) sin leer</Text> : null}
+                  <TouchableOpacity
+                    style={styles.primaryButton}
+                    onPress={() => navigation.navigate('Chat', { otherUserId: item.id, nombre: item.nombre })}
+                  >
+                    <Text style={styles.primaryButtonText}>Abrir chat</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <Text style={styles.pendingText}>Esperando respuesta.</Text>
+              )}
+            </View>
+          );
+        })
       )}
     </ScrollView>
   );
@@ -165,6 +229,70 @@ const styles = StyleSheet.create({
   lastMessage: { color: '#c8c8da', marginTop: 10 },
   unread: { color: '#6fe27f', marginTop: 8, fontWeight: '700' },
   pendingText: { color: '#d1c27d', marginTop: 12, fontWeight: '700' },
+  previewCard: {
+    backgroundColor: '#0f0f25',
+    borderRadius: 22,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#2b2351',
+    overflow: 'hidden',
+    padding: 12,
+  },
+  previewHero: {
+    minHeight: 230,
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: '#161135',
+  },
+  previewHeroImage: {
+    borderRadius: 18,
+    transform: [{ scale: 1.08 }],
+  },
+  previewFallback: {
+    backgroundColor: '#1a153a',
+  },
+  previewScrim: {
+    flex: 1,
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(5, 5, 16, 0.48)',
+    padding: 18,
+  },
+  previewBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(212, 175, 55, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(212, 175, 55, 0.55)',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  previewBadgeText: {
+    color: '#f2dd96',
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+  },
+  previewCopy: {
+    marginTop: 26,
+  },
+  previewTitle: {
+    color: '#fff',
+    fontSize: 28,
+    fontWeight: '800',
+  },
+  previewSubtitle: {
+    color: '#f1dfa2',
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 10,
+  },
+  previewHint: {
+    color: '#ece8ff',
+    lineHeight: 21,
+    marginTop: 12,
+    maxWidth: 260,
+  },
   primaryButton: {
     marginTop: 14,
     backgroundColor: '#D4AF37',
