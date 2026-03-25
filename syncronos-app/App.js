@@ -35,7 +35,7 @@ const TAB_ICONS = {
   Perfil: { active: 'person', inactive: 'person-outline' },
 };
 
-const MI_IP = '192.168.1.113';
+const MI_IP = '172.20.10.8';
 const BASE_URL = MI_IP === 'localhost' ? 'http://localhost:3000' : `http://${MI_IP}:3000`;
 
 function HomeTabs() {

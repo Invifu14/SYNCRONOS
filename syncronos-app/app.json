@@ -26,12 +26,19 @@
         {
           "defaultChannel": "messages"
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "SYNCRONOS necesita acceso a tu ubicacion para buscar ciudades y encontrar conexiones cercanas."
+        }
       ]
     ],
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSUserNotificationUsageDescription": "SYNCRONOS usa notificaciones para avisarte de mensajes y matches nuevos."
+        "NSUserNotificationUsageDescription": "SYNCRONOS usa notificaciones para avisarte de mensajes y matches nuevos.",
+        "NSLocationWhenInUseUsageDescription": "SYNCRONOS necesita acceso a tu ubicacion para buscar ciudades y encontrar conexiones cercanas."
       }
     },
     "android": {
@@ -41,6 +48,8 @@
       },
       "edgeToEdgeEnabled": true,
       "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
         "CAMERA",
         "POST_NOTIFICATIONS",
         "READ_MEDIA_IMAGES"

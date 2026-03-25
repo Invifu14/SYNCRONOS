@@ -51,6 +51,16 @@ const formatPlaceLabel = (place, fallback) => {
   return parts.join(', ');
 };
 
+const LOCATION_ACCESS_ERROR_PATTERN = /not authorized to use location services/i;
+
+const getReadableLocationError = (error, fallbackMessage) => {
+  const rawMessage = `${error?.message || error || ''}`.trim();
+  if (LOCATION_ACCESS_ERROR_PATTERN.test(rawMessage)) {
+    return 'Activa la ubicacion del telefono y concede permiso de ubicacion a la app para continuar.';
+  }
+  return fallbackMessage;
+};
+
 export default function LocationSelectorModal({
   visible,
   title,
@@ -83,6 +93,37 @@ export default function LocationSelectorModal({
     return POPULAR_LOCATIONS.filter((location) => location.toLowerCase().includes(trimmed)).slice(0, 10);
   }, [query]);
 
+  const ensureLocationAccess = async ({
+    requestIfNeeded = true,
+    requireEnabledServices = true,
+  } = {}) => {
+    let permission = await Location.getForegroundPermissionsAsync();
+    if (permission.status !== 'granted' && requestIfNeeded && permission.canAskAgain !== false) {
+      permission = await Location.requestForegroundPermissionsAsync();
+    }
+
+    if (permission.status !== 'granted') {
+      setMessage(
+        permission.canAskAgain === false
+          ? 'La app no tiene permiso de ubicacion. Activalo manualmente desde Ajustes > Apps > permisos.'
+          : 'Debes conceder permiso de ubicacion para buscar ciudades o usar tu ubicacion actual.'
+      );
+      return false;
+    }
+
+    if (!requireEnabledServices) {
+      return true;
+    }
+
+    const servicesEnabled = await Location.hasServicesEnabledAsync();
+    if (!servicesEnabled) {
+      setMessage('Los servicios de ubicacion del telefono estan apagados. Activalos e intenta de nuevo.');
+      return false;
+    }
+
+    return true;
+  };
+
   const resolvePlace = async (input, source) => {
     const trimmed = `${input || ''}`.trim();
     if (!trimmed) {
@@ -93,6 +134,11 @@ export default function LocationSelectorModal({
     setLoading(true);
     setMessage('');
     try {
+      const hasLocationAccess = await ensureLocationAccess();
+      if (!hasLocationAccess) {
+        return;
+      }
+
       const geocoded = await Location.geocodeAsync(trimmed);
       if (!geocoded.length) {
         setMessage('No pudimos ubicar esa ciudad. Intenta con un nombre mas exacto.');
@@ -129,8 +175,8 @@ export default function LocationSelectorModal({
       onSelect(result);
       onClose();
     } catch (error) {
-      console.error('No se pudo resolver la ubicacion', error);
-      setMessage('No se pudo consultar esa ubicacion desde el dispositivo.');
+      console.warn('No se pudo resolver la ubicacion:', `${error?.message || error || ''}`.trim());
+      setMessage(getReadableLocationError(error, 'No se pudo consultar esa ubicacion desde el dispositivo.'));
     } finally {
       setLoading(false);
     }
@@ -140,9 +186,8 @@ export default function LocationSelectorModal({
     setLoading(true);
     setMessage('');
     try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (permission.status !== 'granted') {
-        setMessage('Permiso de ubicacion denegado.');
+      const hasLocationAccess = await ensureLocationAccess();
+      if (!hasLocationAccess) {
         return;
       }
 
@@ -162,8 +207,8 @@ export default function LocationSelectorModal({
       });
       onClose();
     } catch (error) {
-      console.error('No se pudo obtener la ubicacion actual', error);
-      setMessage('No fue posible obtener tu ubicacion actual.');
+      console.warn('No se pudo obtener la ubicacion actual:', `${error?.message || error || ''}`.trim());
+      setMessage(getReadableLocationError(error, 'No fue posible obtener tu ubicacion actual.'));
     } finally {
       setLoading(false);
     }
