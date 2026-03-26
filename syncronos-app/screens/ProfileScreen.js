@@ -7,9 +7,19 @@ import PhotoSlotsEditor from '../components/PhotoSlotsEditor';
 import ProfilePhotoCarousel from '../components/ProfilePhotoCarousel';
 import ProfilePromptsEditor from '../components/ProfilePromptsEditor';
 import TimeZoneSelectorModal from '../components/TimeZoneSelectorModal';
+import { GENDER_OPTIONS, ORIENTATION_OPTIONS, usesExpandedOrientationStep } from '../utils/identityOptions';
 import { extractPhotoUrls, normalizePhotoDrafts, uploadDraftPhotos } from '../utils/photos';
 import { compactProfilePrompts, normalizeProfilePrompts } from '../utils/profilePrompts';
 import { formatTimeZoneLabel, getDefaultBirthTimeZone, inferTimeZoneFromLocationLabel } from '../utils/timezones';
+
+function SelectionTile({ active, label, description, onPress }) {
+  return (
+    <TouchableOpacity style={[styles.selectionTile, active && styles.selectionTileActive]} onPress={onPress}>
+      <Text style={[styles.selectionTileLabel, active && styles.selectionTileLabelActive]}>{label}</Text>
+      <Text style={[styles.selectionTileDescription, active && styles.selectionTileDescriptionActive]}>{description}</Text>
+    </TouchableOpacity>
+  );
+}
 
 export default function ProfileScreen() {
   const { user, apiFetch, setUser, refreshUser, logout } = useContext(AppContext);
@@ -95,6 +105,11 @@ export default function ProfileScreen() {
       return;
     }
 
+    if (usesExpandedOrientationStep(draft.genero) && !draft.orientacion_sexual) {
+      Alert.alert('Error', 'Elige tu orientacion antes de guardar el perfil.');
+      return;
+    }
+
     setSaving(true);
     try {
       const uploadedDrafts = await uploadDraftPhotos({
@@ -142,6 +157,39 @@ export default function ProfileScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Identidad y perfil publico</Text>
         <TextInput style={styles.input} value={draft.nombre} onChangeText={(value) => updateField('nombre', value)} placeholder="Nombre" placeholderTextColor="#666" />
+        <Text style={styles.selectionHelper}>Elige como quieres presentarte dentro de SYNCRONOS.</Text>
+        <View style={styles.selectionGrid}>
+          {GENDER_OPTIONS.map((item) => (
+            <SelectionTile
+              key={item.value}
+              label={item.label}
+              description={item.description}
+              active={draft.genero === item.value}
+              onPress={() => {
+                updateField('genero', item.value);
+                if (!usesExpandedOrientationStep(item.value)) {
+                  updateField('orientacion_sexual', '');
+                }
+              }}
+            />
+          ))}
+        </View>
+        {usesExpandedOrientationStep(draft.genero) ? (
+          <>
+            <Text style={styles.selectionHelper}>Cuentanos tambien como quieres definir tu orientacion sexual.</Text>
+            <View style={styles.selectionGrid}>
+              {ORIENTATION_OPTIONS.map((item) => (
+                <SelectionTile
+                  key={item.value}
+                  label={item.label}
+                  description={item.description}
+                  active={draft.orientacion_sexual === item.value}
+                  onPress={() => updateField('orientacion_sexual', item.value)}
+                />
+              ))}
+            </View>
+          </>
+        ) : null}
         <TouchableOpacity style={styles.dateInput} onPress={() => setShowBirthDatePicker(true)} activeOpacity={0.85}>
           <Text style={draft.fecha_nacimiento ? styles.dateValue : styles.datePlaceholder}>{formatDateLabel(draft.fecha_nacimiento)}</Text>
         </TouchableOpacity>
@@ -325,6 +373,11 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   sectionTitle: { color: '#D4AF37', fontSize: 16, fontWeight: '700', marginBottom: 14 },
+  selectionHelper: {
+    color: '#b7b7c9',
+    lineHeight: 20,
+    marginBottom: 12,
+  },
   input: {
     backgroundColor: '#050510',
     color: '#fff',
@@ -347,6 +400,44 @@ const styles = StyleSheet.create({
   datePlaceholder: { color: '#666' },
   dateValue: { color: '#fff' },
   inlineRow: { flexDirection: 'row', gap: 10 },
+  selectionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 12,
+  },
+  selectionTile: {
+    width: '48%',
+    minHeight: 138,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#2a2a4c',
+    backgroundColor: '#14142f',
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+    justifyContent: 'space-between',
+  },
+  selectionTileActive: {
+    backgroundColor: '#D4AF37',
+    borderColor: '#D4AF37',
+  },
+  selectionTileLabel: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 10,
+  },
+  selectionTileLabelActive: {
+    color: '#050510',
+  },
+  selectionTileDescription: {
+    color: '#c9c9db',
+    lineHeight: 19,
+    fontSize: 12,
+  },
+  selectionTileDescriptionActive: {
+    color: '#130E22',
+  },
   halfInput: { flex: 1 },
   toggleRow: {
     flexDirection: 'row',

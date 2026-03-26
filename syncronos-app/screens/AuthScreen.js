@@ -6,6 +6,7 @@ import LocationSelectorModal from '../components/LocationSelectorModal';
 import PhotoSlotsEditor from '../components/PhotoSlotsEditor';
 import ProfilePromptsEditor from '../components/ProfilePromptsEditor';
 import TimeZoneSelectorModal from '../components/TimeZoneSelectorModal';
+import { GENDER_OPTIONS, ORIENTATION_OPTIONS, usesExpandedOrientationStep } from '../utils/identityOptions';
 import { extractPhotoUrls, normalizePhotoDrafts, uploadDraftPhotos } from '../utils/photos';
 import { compactProfilePrompts, normalizeProfilePrompts } from '../utils/profilePrompts';
 import { formatTimeZoneLabel, getDefaultBirthTimeZone, inferTimeZoneFromLocationLabel } from '../utils/timezones';
@@ -14,6 +15,15 @@ function OptionButton({ active, label, onPress }) {
   return (
     <TouchableOpacity style={[styles.optionButton, active && styles.optionButtonActive]} onPress={onPress}>
       <Text style={[styles.optionText, active && styles.optionTextActive]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function SelectionTile({ active, label, description, onPress }) {
+  return (
+    <TouchableOpacity style={[styles.selectionTile, active && styles.selectionTileActive]} onPress={onPress}>
+      <Text style={[styles.selectionTileLabel, active && styles.selectionTileLabelActive]}>{label}</Text>
+      <Text style={[styles.selectionTileDescription, active && styles.selectionTileDescriptionActive]}>{description}</Text>
     </TouchableOpacity>
   );
 }
@@ -77,6 +87,7 @@ export default function AuthScreen({ navigation, route }) {
   const [intencion, setIntencion] = useState('');
   const [genero, setGenero] = useState('');
   const [generoInteres, setGeneroInteres] = useState('');
+  const [orientacionSexual, setOrientacionSexual] = useState('');
 
   const [fecha, setFecha] = useState('');
   const [birthDate, setBirthDate] = useState(new Date(2000, 0, 1));
@@ -182,16 +193,46 @@ export default function AuthScreen({ navigation, route }) {
     {
       id: 'genero',
       label: 'Tu genero',
-      helper: 'Esto nos ayuda a personalizar mejor tu radar.',
+      helper: 'Elige como quieres presentarte. Si eliges Otro, abriremos un paso adicional para definir tu orientacion.',
       canContinue: !!genero,
       content: (
-        <View style={styles.rowWrap}>
-          {['Hombre', 'Mujer', 'Otro'].map((item) => (
-            <OptionButton key={item} label={item} active={genero === item} onPress={() => setGenero(item)} />
+        <View style={styles.selectionGrid}>
+          {GENDER_OPTIONS.map((item) => (
+            <SelectionTile
+              key={item.value}
+              label={item.label}
+              description={item.description}
+              active={genero === item.value}
+              onPress={() => {
+                setGenero(item.value);
+                if (!usesExpandedOrientationStep(item.value)) {
+                  setOrientacionSexual('');
+                }
+              }}
+            />
           ))}
         </View>
       ),
     },
+    ...(usesExpandedOrientationStep(genero) ? [{
+      id: 'orientacion',
+      label: 'Tu orientacion sexual',
+      helper: 'Elige la opcion que mejor describa como quieres definirte en esta etapa.',
+      canContinue: !!orientacionSexual,
+      content: (
+        <View style={styles.selectionGrid}>
+          {ORIENTATION_OPTIONS.map((item) => (
+            <SelectionTile
+              key={item.value}
+              label={item.label}
+              description={item.description}
+              active={orientacionSexual === item.value}
+              onPress={() => setOrientacionSexual(item.value)}
+            />
+          ))}
+        </View>
+      ),
+    }] : []),
     {
       id: 'interes',
       label: 'A quien quieres conocer',
@@ -419,6 +460,7 @@ export default function AuthScreen({ navigation, route }) {
     mostrarEdad,
     nombre,
     ocupacion,
+    orientacionSexual,
     perfilActivo,
     prompts,
     timezoneNacimiento,
@@ -444,6 +486,9 @@ export default function AuthScreen({ navigation, route }) {
     setCorreo('');
     setTelefono('');
     setCodigo('');
+    setGenero('');
+    setGeneroInteres('');
+    setOrientacionSexual('');
     setCreatingProfile(false);
   }, [authMode]);
 
@@ -531,6 +576,11 @@ export default function AuthScreen({ navigation, route }) {
       return;
     }
 
+    if (usesExpandedOrientationStep(genero) && !orientacionSexual) {
+      Alert.alert('Error', 'Elige tu orientacion antes de crear el perfil.');
+      return;
+    }
+
     if (Number(edadMinPref) > Number(edadMaxPref)) {
       Alert.alert('Error', 'El rango de edad no es valido.');
       return;
@@ -567,6 +617,7 @@ export default function AuthScreen({ navigation, route }) {
           intencion,
           genero,
           genero_interes: generoInteres,
+          orientacion_sexual: usesExpandedOrientationStep(genero) ? orientacionSexual : '',
           latitud,
           longitud,
           edad_min_pref: edadMinPref,
@@ -897,6 +948,43 @@ const styles = StyleSheet.create({
   optionText: { color: '#d0d0de', fontWeight: '600' },
   optionTextActive: { color: '#050510' },
   rowWrap: { flexDirection: 'row', flexWrap: 'wrap' },
+  selectionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  selectionTile: {
+    width: '48%',
+    minHeight: 138,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#2a2a4c',
+    backgroundColor: '#14142f',
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+    justifyContent: 'space-between',
+  },
+  selectionTileActive: {
+    backgroundColor: '#D4AF37',
+    borderColor: '#D4AF37',
+  },
+  selectionTileLabel: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 10,
+  },
+  selectionTileLabelActive: {
+    color: '#050510',
+  },
+  selectionTileDescription: {
+    color: '#c9c9db',
+    lineHeight: 19,
+    fontSize: 12,
+  },
+  selectionTileDescriptionActive: {
+    color: '#130E22',
+  },
   inlineInputs: { flexDirection: 'row', gap: 10 },
   compactInput: { flex: 1 },
   toggleRow: {

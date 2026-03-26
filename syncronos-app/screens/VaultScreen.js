@@ -23,9 +23,12 @@ const getConnectionPhoto = (item) => {
   return sourcePhotos.find(Boolean) || null;
 };
 
-function ReceivedLikeCard({ item, onAccept }) {
+const getShortName = (name) => `${name || ''}`.trim().split(/\s+/).filter(Boolean)[0] || 'Alguien';
+
+function ReceivedLikeCard({ item }) {
   const photo = getConnectionPhoto(item);
-  const teaserTitle = item.mostrar_edad === false ? 'Alguien especial' : `Alguien, ${item.edad ?? '?'}`;
+  const shortName = getShortName(item.nombre);
+  const teaserTitle = item.mostrar_edad === false ? shortName : `${shortName}, ${item.edad ?? '?'}`;
   const teaserMeta = [item.signo_zodiacal, item.intencion, item.distancia !== null ? `${item.distancia} km` : null]
     .filter(Boolean)
     .join(' | ');
@@ -59,10 +62,6 @@ function ReceivedLikeCard({ item, onAccept }) {
           {teaserContent}
         </View>
       )}
-
-      <TouchableOpacity style={styles.primaryButton} onPress={onAccept}>
-        <Text style={styles.primaryButtonText}>Responder con like</Text>
-      </TouchableOpacity>
     </View>
   );
 }
@@ -110,18 +109,6 @@ export default function VaultScreen() {
     };
   }, [loadConnections, socket]);
 
-  const acceptLike = async (targetId) => {
-    try {
-      await apiFetch('/swipe', {
-        method: 'POST',
-        body: JSON.stringify({ mi_id: user.id, destino_id: targetId, tipo: 'like' }),
-      });
-      loadConnections();
-    } catch (error) {
-      console.error('No se pudo aceptar el like', error);
-    }
-  };
-
   const list = segment === 'matches'
     ? connections.matches
     : segment === 'likes_recibidos'
@@ -150,7 +137,6 @@ export default function VaultScreen() {
               <ReceivedLikeCard
                 key={`${segment}-${item.id}`}
                 item={item}
-                onAccept={() => acceptLike(item.id)}
               />
             );
           }

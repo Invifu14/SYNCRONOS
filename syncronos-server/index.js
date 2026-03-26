@@ -192,21 +192,64 @@ const sanitizeDistance = (value, fallback = 50) => {
 
 const pairKey = (first, second) => [Number(first), Number(second)].sort((a, b) => a - b).join(':');
 
-const normalizeInterestGender = (value) => {
-    if (value === 'Hombres') return 'Hombre';
-    if (value === 'Mujeres') return 'Mujer';
-    return value;
+const ALL_FEED_GENDER_BUCKETS = ['Hombre', 'Mujer', 'Otro'];
+
+const getInterestGenderBuckets = (value) => {
+    if (!value || value === 'Todos') return ALL_FEED_GENDER_BUCKETS;
+    if (value === 'Hombres') return ['Hombre'];
+    if (value === 'Mujeres') return ['Mujer'];
+    if (value === 'Otros') return ['Otro'];
+    return [`${value}`.trim()].filter(Boolean);
 };
 
-const candidateAcceptsGender = (candidate, myGender) => {
-    if (!candidate?.genero_interes || candidate.genero_interes === 'Todos') return true;
-    return normalizeInterestGender(candidate.genero_interes) === myGender;
+const getOtherGenderOrientationBuckets = (profile) => {
+    const orientation = `${profile?.orientacion_sexual || ''}`.trim();
+    const interest = `${profile?.genero_interes || ''}`.trim();
+
+    if (orientation === 'Lesbiana') return ['Mujer'];
+    if (orientation === 'Gay') return ['Hombre'];
+
+    if (orientation === 'Heterosexual') {
+        if (interest === 'Hombres') return ['Mujer'];
+        if (interest === 'Mujeres') return ['Hombre'];
+        return ['Hombre', 'Mujer'];
+    }
+
+    if ([
+        'Bisexual',
+        'Asexual',
+        'Demisexual',
+        'Pansexual',
+        'Queer',
+        'En exploracion',
+    ].includes(orientation)) {
+        return ['Hombre', 'Mujer'];
+    }
+
+    return [];
 };
 
-const requesterInterestedInCandidate = (requester, candidateGender) => {
-    if (!requester?.genero_interes || requester.genero_interes === 'Todos') return true;
-    return normalizeInterestGender(requester.genero_interes) === candidateGender;
+// For profiles marked as "Otro", orientation plus stated interest helps us
+// decide if they should also appear in binary feeds such as mujeres u hombres.
+const getFeedGenderBuckets = (profile) => {
+    const gender = `${profile?.genero || ''}`.trim();
+
+    if (!gender) return [];
+    if (gender === 'Hombre' || gender === 'Mujer') return [gender];
+    if (gender !== 'Otro') return [gender];
+
+    return uniqueStrings(['Otro', ...getOtherGenderOrientationBuckets(profile)]);
 };
+
+const profileMatchesInterest = (interestValue, otherProfile) => {
+    const desiredBuckets = getInterestGenderBuckets(interestValue);
+    const candidateBuckets = getFeedGenderBuckets(otherProfile);
+    return desiredBuckets.some((bucket) => candidateBuckets.includes(bucket));
+};
+
+const candidateAcceptsGender = (candidate, otherProfile) => profileMatchesInterest(candidate?.genero_interes, otherProfile);
+
+const requesterInterestedInCandidate = (requester, candidateProfile) => profileMatchesInterest(requester?.genero_interes, candidateProfile);
 
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
     if (![lat1, lon1, lat2, lon2].every((value) => Number.isFinite(Number(value)))) return null;
@@ -380,6 +423,7 @@ const buildUserPayload = (
         intencion: user.intencion || '',
         genero: user.genero || '',
         genero_interes: user.genero_interes || '',
+        orientacion_sexual: user.orientacion_sexual || '',
         hora_nacimiento: user.hora_nacimiento || '',
         lugar_nacimiento: user.lugar_nacimiento || '',
         timezone_nacimiento: user.timezone_nacimiento || '',
@@ -452,6 +496,7 @@ const buildProfilePayload = (body) => {
         intencion: `${body.intencion || ''}`.trim(),
         genero: `${body.genero || ''}`.trim(),
         genero_interes: `${body.genero_interes || ''}`.trim(),
+        orientacion_sexual: `${body.genero || ''}`.trim() === 'Otro' ? `${body.orientacion_sexual || ''}`.trim() : '',
         latitud,
         longitud,
         hora_nacimiento: `${body.hora_nacimiento || ''}`.trim(),
@@ -689,6 +734,7 @@ const notifyRecipientIfNeeded = async (message) => {
             intencion TEXT,
             genero TEXT,
             genero_interes TEXT,
+            orientacion_sexual TEXT DEFAULT '',
             latitud REAL,
             longitud REAL,
             hora_nacimiento TEXT,
@@ -777,6 +823,7 @@ const notifyRecipientIfNeeded = async (message) => {
         "ALTER TABLE usuarios ADD COLUMN timezone_nacimiento TEXT DEFAULT '';",
         "ALTER TABLE usuarios ADD COLUMN push_token TEXT DEFAULT '';",
         "ALTER TABLE usuarios ADD COLUMN prompts TEXT DEFAULT '[]';",
+        "ALTER TABLE usuarios ADD COLUMN orientacion_sexual TEXT DEFAULT '';",
         "ALTER TABLE sincronias ADD COLUMN tipo TEXT DEFAULT 'like';",
     ];
 
@@ -893,6 +940,10 @@ app.post('/registrar-cronos', async (req, res) => {
             return res.status(400).json({ mensaje: 'La app solo esta disponible para mayores de 18 anos' });
         }
 
+        if (`${genero || ''}`.trim() === 'Otro' && !`${req.body.orientacion_sexual || ''}`.trim()) {
+            return res.status(400).json({ mensaje: 'Debes definir tu orientacion si eliges la opcion Otro' });
+        }
+
         let existing = await findUserByContact({ correo, telefono });
 
         const sourceBody = existing
@@ -914,7 +965,7 @@ app.post('/registrar-cronos', async (req, res) => {
             await db.run(
                 `UPDATE usuarios
                  SET nombre = ?, fecha_nacimiento = ?, generacion = ?, signo_zodiacal = ?, foto = ?, fotos = ?, fotos_moderadas = ?, ubicacion = ?, gustos = ?,
-                     metodo_registro = ?, correo = ?, telefono = ?, intencion = ?, genero = ?, genero_interes = ?, latitud = ?, longitud = ?,
+                     metodo_registro = ?, correo = ?, telefono = ?, intencion = ?, genero = ?, genero_interes = ?, orientacion_sexual = ?, latitud = ?, longitud = ?,
                      hora_nacimiento = ?, lugar_nacimiento = ?, timezone_nacimiento = ?, latitud_nacimiento = ?, longitud_nacimiento = ?, luna = ?, ascendente = ?, venus = ?, marte = ?, bio = ?, ocupacion = ?,
                      educacion = ?, prompts = ?, edad_min_pref = ?, edad_max_pref = ?, distancia_max_km = ?, mostrar_edad = ?, mostrar_distancia = ?,
                      consentimiento_ubicacion = ?, perfil_activo = ?, ultima_sesion = CURRENT_TIMESTAMP
@@ -923,7 +974,7 @@ app.post('/registrar-cronos', async (req, res) => {
                     profile.nombre, profile.fecha_nacimiento, profile.generacion, profile.signo_zodiacal, profile.foto, profile.fotos,
                     getRetainedModeratedPhotos(existing, parseJsonArray(profile.fotos)),
                     profile.ubicacion, profile.gustos, profile.metodo_registro, profile.correo, profile.telefono, profile.intencion,
-                    profile.genero, profile.genero_interes, profile.latitud, profile.longitud, profile.hora_nacimiento, profile.lugar_nacimiento, profile.timezone_nacimiento,
+                    profile.genero, profile.genero_interes, profile.orientacion_sexual, profile.latitud, profile.longitud, profile.hora_nacimiento, profile.lugar_nacimiento, profile.timezone_nacimiento,
                     profile.latitud_nacimiento, profile.longitud_nacimiento,
                     profile.luna, profile.ascendente, profile.venus, profile.marte, profile.bio, profile.ocupacion, profile.educacion, profile.prompts,
                     profile.edad_min_pref, profile.edad_max_pref, profile.distancia_max_km, profile.mostrar_edad, profile.mostrar_distancia,
@@ -938,14 +989,14 @@ app.post('/registrar-cronos', async (req, res) => {
         const insertResult = await db.run(
             `INSERT INTO usuarios (
                 nombre, fecha_nacimiento, generacion, signo_zodiacal, foto, fotos, fotos_moderadas, ubicacion, gustos, metodo_registro, correo, telefono,
-                intencion, genero, genero_interes, latitud, longitud, hora_nacimiento, lugar_nacimiento, timezone_nacimiento, latitud_nacimiento, longitud_nacimiento, luna, ascendente, venus, marte,
+                intencion, genero, genero_interes, orientacion_sexual, latitud, longitud, hora_nacimiento, lugar_nacimiento, timezone_nacimiento, latitud_nacimiento, longitud_nacimiento, luna, ascendente, venus, marte,
                 bio, ocupacion, educacion, prompts, edad_min_pref, edad_max_pref, distancia_max_km, mostrar_edad, mostrar_distancia,
                 consentimiento_ubicacion, perfil_activo, push_token, ultima_sesion
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
             [
                 profile.nombre, profile.fecha_nacimiento, profile.generacion, profile.signo_zodiacal, profile.foto, profile.fotos, '[]',
                 profile.ubicacion, profile.gustos, profile.metodo_registro, profile.correo, profile.telefono, profile.intencion,
-                profile.genero, profile.genero_interes, profile.latitud, profile.longitud, profile.hora_nacimiento, profile.lugar_nacimiento, profile.timezone_nacimiento,
+                profile.genero, profile.genero_interes, profile.orientacion_sexual, profile.latitud, profile.longitud, profile.hora_nacimiento, profile.lugar_nacimiento, profile.timezone_nacimiento,
                 profile.latitud_nacimiento, profile.longitud_nacimiento,
                 profile.luna, profile.ascendente, profile.venus, profile.marte, profile.bio, profile.ocupacion, profile.educacion, profile.prompts,
                 profile.edad_min_pref, profile.edad_max_pref, profile.distancia_max_km, profile.mostrar_edad, profile.mostrar_distancia,
@@ -1068,6 +1119,10 @@ app.put('/perfil/:id', async (req, res) => {
             return res.status(400).json({ mensaje: 'La app solo esta disponible para mayores de 18 anos' });
         }
 
+        if (`${mergedBody.genero || ''}`.trim() === 'Otro' && !`${mergedBody.orientacion_sexual || ''}`.trim()) {
+            return res.status(400).json({ mensaje: 'Debes definir tu orientacion si eliges la opcion Otro' });
+        }
+
         const profile = buildProfilePayload(mergedBody);
         if (profile.edad_min_pref > profile.edad_max_pref) {
             return res.status(400).json({ mensaje: 'El rango de edad no es valido' });
@@ -1076,7 +1131,7 @@ app.put('/perfil/:id', async (req, res) => {
         await db.run(
             `UPDATE usuarios
              SET nombre = ?, fecha_nacimiento = ?, generacion = ?, signo_zodiacal = ?, foto = ?, fotos = ?, fotos_moderadas = ?, ubicacion = ?, gustos = ?,
-                 metodo_registro = ?, correo = ?, telefono = ?, intencion = ?, genero = ?, genero_interes = ?, latitud = ?, longitud = ?,
+                 metodo_registro = ?, correo = ?, telefono = ?, intencion = ?, genero = ?, genero_interes = ?, orientacion_sexual = ?, latitud = ?, longitud = ?,
                  hora_nacimiento = ?, lugar_nacimiento = ?, timezone_nacimiento = ?, latitud_nacimiento = ?, longitud_nacimiento = ?, luna = ?, ascendente = ?, venus = ?, marte = ?, bio = ?, ocupacion = ?,
                  educacion = ?, prompts = ?, edad_min_pref = ?, edad_max_pref = ?, distancia_max_km = ?, mostrar_edad = ?, mostrar_distancia = ?,
                  consentimiento_ubicacion = ?, perfil_activo = ?, ultima_sesion = CURRENT_TIMESTAMP
@@ -1085,7 +1140,7 @@ app.put('/perfil/:id', async (req, res) => {
                 profile.nombre, profile.fecha_nacimiento, profile.generacion, profile.signo_zodiacal, profile.foto, profile.fotos,
                 getRetainedModeratedPhotos(current, parseJsonArray(profile.fotos)),
                 profile.ubicacion, profile.gustos, profile.metodo_registro, profile.correo, profile.telefono, profile.intencion,
-                profile.genero, profile.genero_interes, profile.latitud, profile.longitud, profile.hora_nacimiento, profile.lugar_nacimiento, profile.timezone_nacimiento,
+                profile.genero, profile.genero_interes, profile.orientacion_sexual, profile.latitud, profile.longitud, profile.hora_nacimiento, profile.lugar_nacimiento, profile.timezone_nacimiento,
                 profile.latitud_nacimiento, profile.longitud_nacimiento,
                 profile.luna, profile.ascendente, profile.venus, profile.marte, profile.bio, profile.ocupacion, profile.educacion, profile.prompts,
                 profile.edad_min_pref, profile.edad_max_pref, profile.distancia_max_km, profile.mostrar_edad, profile.mostrar_distancia,
@@ -1128,8 +1183,8 @@ app.get('/feed/:id', async (req, res) => {
 
         const filtered = candidates
             .map((candidate) => {
-                if (!requesterInterestedInCandidate(currentUser, candidate.genero)) return null;
-                if (!candidateAcceptsGender(candidate, currentUser.genero)) return null;
+                if (!requesterInterestedInCandidate(currentUser, candidate)) return null;
+                if (!candidateAcceptsGender(candidate, currentUser)) return null;
 
                 const currentAge = calculateAge(currentUser.fecha_nacimiento);
                 const candidateAge = calculateAge(candidate.fecha_nacimiento);
