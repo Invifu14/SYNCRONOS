@@ -1,4 +1,4 @@
-const createDraftId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+﻿const createDraftId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 const normalizeMimeType = (draft) => {
   if (draft?.mimeType) return draft.mimeType;
@@ -30,7 +30,7 @@ export const createPhotoDraftFromAsset = (asset) => ({
   uploading: false,
 });
 
-export const normalizePhotoDrafts = (values = [], maxItems = 3) => {
+export const normalizePhotoDrafts = (values = [], maxItems = 6) => {
   const drafts = values
     .map((item) => {
       if (!item) return null;
@@ -99,3 +99,4 @@ export async function uploadDraftPhotos({ drafts, userId, request, onDraftsChang
 
   return nextDrafts;
 }
+

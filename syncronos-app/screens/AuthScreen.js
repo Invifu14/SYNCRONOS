@@ -1,15 +1,35 @@
-import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+﻿import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Animated, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import * as Location from 'expo-location';
 import { AppContext } from '../context/AppContext';
 import AstralPickerModal from '../components/AstralPickerModal';
 import LocationSelectorModal from '../components/LocationSelectorModal';
 import PhotoSlotsEditor from '../components/PhotoSlotsEditor';
 import ProfilePromptsEditor from '../components/ProfilePromptsEditor';
+import { RangeSlider, SingleSlider } from '../components/PreferenceSliders';
 import TimeZoneSelectorModal from '../components/TimeZoneSelectorModal';
 import { GENDER_OPTIONS, ORIENTATION_OPTIONS, usesExpandedOrientationStep } from '../utils/identityOptions';
 import { extractPhotoUrls, normalizePhotoDrafts, uploadDraftPhotos } from '../utils/photos';
 import { compactProfilePrompts, normalizeProfilePrompts } from '../utils/profilePrompts';
 import { formatTimeZoneLabel, getDefaultBirthTimeZone, inferTimeZoneFromLocationLabel } from '../utils/timezones';
+
+const LOCATION_ACCESS_ERROR_PATTERN = /not authorized to use location services/i;
+
+const uniqueLocationParts = (values) => [...new Set(values.filter(Boolean))];
+
+const formatDetectedLocationLabel = (place) => {
+  const rawName = place?.city || place?.district || place?.subregion || place?.region || 'Mi ciudad actual';
+  const parts = uniqueLocationParts([rawName, place?.region, place?.country]);
+  return parts.join(', ');
+};
+
+const getReadableCurrentLocationError = (error) => {
+  const rawMessage = `${error?.message || error || ''}`.trim();
+  if (LOCATION_ACCESS_ERROR_PATTERN.test(rawMessage)) {
+    return 'Activa la ubicacion del telefono y concede permiso a SYNCRONOS para continuar.';
+  }
+  return 'No pudimos obtener tu ciudad actual desde el dispositivo.';
+};
 
 function OptionButton({ active, label, onPress }) {
   return (
@@ -104,10 +124,10 @@ export default function AuthScreen({ navigation, route }) {
   const [longitudNacimiento, setLongitudNacimiento] = useState(null);
 
   const [ubicacion, setUbicacion] = useState('');
-  const [showCurrentLocationSelector, setShowCurrentLocationSelector] = useState(false);
   const [latitud, setLatitud] = useState(null);
   const [longitud, setLongitud] = useState(null);
   const [locationMessage, setLocationMessage] = useState('');
+  const [resolvingCurrentLocation, setResolvingCurrentLocation] = useState(false);
 
   const [bio, setBio] = useState('');
   const [ocupacion, setOcupacion] = useState('');
@@ -119,13 +139,14 @@ export default function AuthScreen({ navigation, route }) {
   const [edadMinPref, setEdadMinPref] = useState('18');
   const [edadMaxPref, setEdadMaxPref] = useState('35');
   const [distanciaMaxKm, setDistanciaMaxKm] = useState('50');
-  const [mostrarEdad, setMostrarEdad] = useState(true);
-  const [mostrarDistancia, setMostrarDistancia] = useState(true);
-  const [consentimientoUbicacion, setConsentimientoUbicacion] = useState(true);
-  const [perfilActivo, setPerfilActivo] = useState(true);
+  const [mostrarEdad] = useState(true);
+  const [mostrarDistancia] = useState(true);
+  const [consentimientoUbicacion, setConsentimientoUbicacion] = useState(false);
+  const [perfilActivo] = useState(true);
 
   const [creatingProfile, setCreatingProfile] = useState(false);
   const stepAnimation = useRef(new Animated.Value(1)).current;
+  const currentLocationAttemptedRef = useRef(false);
   const { baseUrl, completeLogin } = useContext(AppContext);
   const authMode = route?.params?.mode === 'login' ? 'login' : 'register';
   const isLoginMode = authMode === 'login';
@@ -159,6 +180,70 @@ export default function AuthScreen({ navigation, route }) {
     if (!value) return placeholder;
     return value;
   };
+
+  const resolveCurrentLocation = useCallback(async () => {
+    setResolvingCurrentLocation(true);
+    setLocationMessage('');
+
+    try {
+      let permission = await Location.getForegroundPermissionsAsync();
+      if (permission.status !== 'granted' && permission.canAskAgain !== false) {
+        permission = await Location.requestForegroundPermissionsAsync();
+      }
+
+      if (permission.status !== 'granted') {
+        setConsentimientoUbicacion(false);
+        setUbicacion('');
+        setLatitud(null);
+        setLongitud(null);
+        setLocationMessage(
+          permission.canAskAgain === false
+            ? 'La ubicacion esta bloqueada desde Ajustes. Sin este permiso no podras avanzar.'
+            : 'Necesitamos tu permiso de ubicacion. Sin ese permiso no podras avanzar.'
+        );
+        return;
+      }
+
+      const servicesEnabled = await Location.hasServicesEnabledAsync();
+      if (!servicesEnabled) {
+        setConsentimientoUbicacion(false);
+        setUbicacion('');
+        setLatitud(null);
+        setLongitud(null);
+        setLocationMessage('Activa la ubicacion del telefono para que SYNCRONOS detecte tu ciudad actual.');
+        return;
+      }
+
+      const coords = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const places = await Location.reverseGeocodeAsync({
+        latitude: coords.coords.latitude,
+        longitude: coords.coords.longitude,
+      });
+
+      const nextLabel = places.length ? formatDetectedLocationLabel(places[0]) : 'Mi ciudad actual';
+      setUbicacion(nextLabel);
+      setLatitud(coords.coords.latitude);
+      setLongitud(coords.coords.longitude);
+      setConsentimientoUbicacion(true);
+      setLocationMessage('Listo, detectamos tu ciudad actual desde la app.');
+    } catch (error) {
+      console.error('No se pudo obtener la ubicacion actual', error);
+      setConsentimientoUbicacion(false);
+      setUbicacion('');
+      setLatitud(null);
+      setLongitud(null);
+      setLocationMessage(getReadableCurrentLocationError(error));
+    } finally {
+      setResolvingCurrentLocation(false);
+    }
+  }, []);
+
+  const selectedPhotosCount = useMemo(() => fotos.filter(Boolean).length, [fotos]);
+  const currentAgeMin = Number.parseInt(edadMinPref, 10) || 18;
+  const currentAgeMax = Number.parseInt(edadMaxPref, 10) || 35;
+  const currentDistance = Number.parseInt(distanciaMaxKm, 10) || 50;
 
   const profileSteps = useMemo(() => ([
     {
@@ -290,80 +375,83 @@ export default function AuthScreen({ navigation, route }) {
     },
     {
       id: 'ubicacion',
-      label: 'Ciudad actual',
-      helper: 'La usamos para filtros de distancia y para encontrar conexiones cercanas.',
+      label: 'Tu ciudad actual',
+      helper: 'SYNCRONOS la obtiene automaticamente con permiso de ubicacion. Sin ese permiso no podras avanzar.',
+      canContinue: !!ubicacion && Number.isFinite(latitud) && Number.isFinite(longitud),
+      content: (
+        <View style={styles.locationCard}>
+          <Text style={styles.locationCardTitle}>{ubicacion || 'Vamos a detectar tu ciudad actual'}</Text>
+          <Text style={styles.locationCardText}>
+            {locationMessage || 'Pediremos permiso de ubicacion y completaremos esta ciudad automaticamente desde la app.'}
+          </Text>
+
+          {resolvingCurrentLocation ? (
+            <View style={styles.locationLoadingRow}>
+              <ActivityIndicator color="#D4AF37" />
+              <Text style={styles.locationLoadingText}>Detectando tu ciudad...</Text>
+            </View>
+          ) : null}
+
+          <TouchableOpacity
+            style={[styles.locationActionButton, resolvingCurrentLocation && styles.primaryButtonDisabled]}
+            onPress={resolveCurrentLocation}
+            disabled={resolvingCurrentLocation}
+          >
+            <Text style={styles.locationActionText}>
+              {ubicacion ? 'Volver a detectar mi ciudad' : 'Permitir ubicacion actual'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ),
+    },
+    {
+      id: 'bio_gustos',
+      label: 'Bio corta y gustos',
+      helper: 'Tu vibra y tus gustos ayudan a que el otro lado te lea rapido.',
       canContinue: true,
       content: (
         <>
-          <TouchableOpacity style={styles.dateInput} onPress={() => setShowCurrentLocationSelector(true)} activeOpacity={0.85}>
-            <Text style={ubicacion ? styles.dateValue : styles.datePlaceholder}>
-              {formatLocationLabel(ubicacion, 'Selecciona tu ciudad actual')}
-            </Text>
-          </TouchableOpacity>
-          {locationMessage ? <Text style={styles.helperText}>{locationMessage}</Text> : null}
+          <TextInput
+            style={[styles.input, styles.multiline]}
+            placeholder="Cuenta un poco de ti"
+            placeholderTextColor="#666"
+            value={bio}
+            onChangeText={setBio}
+            multiline
+            textAlignVertical="top"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Musica, viajes, cine, cafe..."
+            placeholderTextColor="#666"
+            value={gustos}
+            onChangeText={setGustos}
+          />
         </>
       ),
     },
     {
-      id: 'bio',
-      label: 'Bio corta',
-      helper: 'Dos o tres lineas para que el otro lado capte tu vibra rapido.',
+      id: 'ocupacion_educacion',
+      label: 'Ocupacion y educacion',
+      helper: 'Opcional, pero juntas hacen que tu perfil se sienta mas completo.',
       canContinue: true,
       content: (
-        <TextInput
-          style={[styles.input, styles.multiline]}
-          placeholder="Cuenta un poco de ti"
-          placeholderTextColor="#666"
-          value={bio}
-          onChangeText={setBio}
-          multiline
-          textAlignVertical="top"
-        />
-      ),
-    },
-    {
-      id: 'ocupacion',
-      label: 'Ocupacion',
-      helper: 'Opcional, pero ayuda a que tu perfil se sienta mas completo.',
-      canContinue: true,
-      content: (
-        <TextInput
-          style={styles.input}
-          placeholder="A que te dedicas"
-          placeholderTextColor="#666"
-          value={ocupacion}
-          onChangeText={setOcupacion}
-        />
-      ),
-    },
-    {
-      id: 'educacion',
-      label: 'Educacion',
-      helper: 'Tambien puedes dejarlo vacio si prefieres.',
-      canContinue: true,
-      content: (
-        <TextInput
-          style={styles.input}
-          placeholder="Tu formacion o estudios"
-          placeholderTextColor="#666"
-          value={educacion}
-          onChangeText={setEducacion}
-        />
-      ),
-    },
-    {
-      id: 'gustos',
-      label: 'Tus gustos',
-      helper: 'Separalos por comas para enriquecer tu perfil.',
-      canContinue: true,
-      content: (
-        <TextInput
-          style={styles.input}
-          placeholder="Musica, viajes, cine, cafe..."
-          placeholderTextColor="#666"
-          value={gustos}
-          onChangeText={setGustos}
-        />
+        <>
+          <TextInput
+            style={styles.input}
+            placeholder="A que te dedicas"
+            placeholderTextColor="#666"
+            value={ocupacion}
+            onChangeText={setOcupacion}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Tu formacion o estudios"
+            placeholderTextColor="#666"
+            value={educacion}
+            onChangeText={setEducacion}
+          />
+        </>
       ),
     },
     {
@@ -382,70 +470,59 @@ export default function AuthScreen({ navigation, route }) {
     {
       id: 'fotos',
       label: 'Tus fotos reales',
-      helper: 'Agrega hasta tres fotos. Esta parte si es obligatoria para crear el perfil.',
-      canContinue: fotos.some(Boolean),
-      content: (
-        <PhotoSlotsEditor
-          photos={fotos}
-          onChange={setFotos}
-          disabled={creatingProfile}
-        />
-      ),
-    },
-    {
-      id: 'rango_edad',
-      label: 'Rango de edad',
-      helper: 'Define que edades quieres ver en tu radar.',
-      canContinue: Number(edadMinPref) <= Number(edadMaxPref),
-      content: (
-        <View style={styles.inlineInputs}>
-          <TextInput style={[styles.input, styles.compactInput]} placeholder="Edad min" placeholderTextColor="#666" value={edadMinPref} onChangeText={setEdadMinPref} keyboardType="numeric" />
-          <TextInput style={[styles.input, styles.compactInput]} placeholder="Edad max" placeholderTextColor="#666" value={edadMaxPref} onChangeText={setEdadMaxPref} keyboardType="numeric" />
-        </View>
-      ),
-    },
-    {
-      id: 'distancia',
-      label: 'Distancia maxima',
-      helper: 'En kilometros. Puedes cambiarlo despues desde tu perfil.',
-      canContinue: !!distanciaMaxKm,
-      content: (
-        <TextInput style={styles.input} placeholder="Distancia maxima en km" placeholderTextColor="#666" value={distanciaMaxKm} onChangeText={setDistanciaMaxKm} keyboardType="numeric" />
-      ),
-    },
-    {
-      id: 'privacidad',
-      label: 'Visibilidad y privacidad',
-      helper: 'Ultimo paso antes de crear tu perfil.',
-      canContinue: true,
+      helper: 'Sube minimo 2 fotos y, si quieres, hasta 6 para que tu perfil se vea mas vivo.',
+      canContinue: selectedPhotosCount >= 2,
       content: (
         <>
-          <View style={styles.toggleRow}>
-            <Text style={styles.toggleLabel}>Compartir ubicacion para filtrar por distancia</Text>
-            <Switch value={consentimientoUbicacion} onValueChange={setConsentimientoUbicacion} thumbColor="#D4AF37" trackColor={{ false: '#333', true: '#4a4120' }} />
-          </View>
-          <View style={styles.toggleRow}>
-            <Text style={styles.toggleLabel}>Mostrar edad en tu perfil</Text>
-            <Switch value={mostrarEdad} onValueChange={setMostrarEdad} thumbColor="#D4AF37" trackColor={{ false: '#333', true: '#4a4120' }} />
-          </View>
-          <View style={styles.toggleRow}>
-            <Text style={styles.toggleLabel}>Mostrar distancia a tus matches</Text>
-            <Switch value={mostrarDistancia} onValueChange={setMostrarDistancia} thumbColor="#D4AF37" trackColor={{ false: '#333', true: '#4a4120' }} />
-          </View>
-          <View style={styles.toggleRow}>
-            <Text style={styles.toggleLabel}>Mantener perfil visible</Text>
-            <Switch value={perfilActivo} onValueChange={setPerfilActivo} thumbColor="#D4AF37" trackColor={{ false: '#333', true: '#4a4120' }} />
-          </View>
+          <PhotoSlotsEditor
+            photos={fotos}
+            onChange={setFotos}
+            disabled={creatingProfile}
+          />
+          <Text style={styles.helperText}>{`${selectedPhotosCount}/6 fotos listas para tu perfil.`}</Text>
         </>
+      ),
+    },
+    {
+      id: 'preferencias',
+      label: 'Rango de edad y distancia maxima',
+      helper: 'Ajusta ambos filtros desde aqui con sliders y luego podras cambiarlos en tu perfil.',
+      canContinue: currentAgeMin <= currentAgeMax,
+      content: (
+        <View style={styles.sliderGroup}>
+          <RangeSlider
+            label="Rango de edad"
+            lowValue={currentAgeMin}
+            highValue={currentAgeMax}
+            min={18}
+            max={80}
+            step={1}
+            minLabel="18 anos"
+            maxLabel="80 anos"
+            formatValue={(low, high) => `${low} - ${high} anos`}
+            onChangeLow={(value) => setEdadMinPref(`${value}`)}
+            onChangeHigh={(value) => setEdadMaxPref(`${value}`)}
+          />
+          <SingleSlider
+            label="Distancia maxima"
+            value={currentDistance}
+            min={1}
+            max={300}
+            step={1}
+            minLabel="1 km"
+            maxLabel="300 km"
+            formatValue={(value) => `${value} km`}
+            onChange={(value) => setDistanciaMaxKm(`${value}`)}
+          />
+        </View>
       ),
     },
   ]), [
     bio,
-    consentimientoUbicacion,
     creatingProfile,
-    distanciaMaxKm,
-    edadMaxPref,
-    edadMinPref,
+    currentAgeMax,
+    currentAgeMin,
+    currentDistance,
     educacion,
     fecha,
     fotos,
@@ -454,15 +531,17 @@ export default function AuthScreen({ navigation, route }) {
     gustos,
     horaNacimiento,
     intencion,
+    latitud,
     locationMessage,
+    longitud,
     lugarNacimiento,
-    mostrarDistancia,
-    mostrarEdad,
     nombre,
     ocupacion,
     orientacionSexual,
-    perfilActivo,
     prompts,
+    resolvingCurrentLocation,
+    resolveCurrentLocation,
+    selectedPhotosCount,
     timezoneNacimiento,
     ubicacion,
   ]);
@@ -489,9 +568,24 @@ export default function AuthScreen({ navigation, route }) {
     setGenero('');
     setGeneroInteres('');
     setOrientacionSexual('');
+    setUbicacion('');
+    setLatitud(null);
+    setLongitud(null);
+    setLocationMessage('');
+    setConsentimientoUbicacion(false);
+    setResolvingCurrentLocation(false);
+    currentLocationAttemptedRef.current = false;
     setCreatingProfile(false);
   }, [authMode]);
 
+  useEffect(() => {
+    if (step !== 'profile_wizard') return;
+    if (currentProfileStep?.id !== 'ubicacion') return;
+    if (ubicacion || resolvingCurrentLocation || currentLocationAttemptedRef.current) return;
+
+    currentLocationAttemptedRef.current = true;
+    resolveCurrentLocation();
+  }, [currentProfileStep?.id, resolveCurrentLocation, resolvingCurrentLocation, step, ubicacion]);
   const enviarCodigo = () => {
     if (metodoRegistro === 'correo' && !correo.trim()) {
       Alert.alert('Error', 'El correo es obligatorio.');
@@ -533,7 +627,12 @@ export default function AuthScreen({ navigation, route }) {
 
       const data = await response.json();
       if (!response.ok) {
-        Alert.alert('Error', data.mensaje || 'No se pudo iniciar sesion.');
+        const notFound = response.status === 404 || `${data.mensaje || ''}`.toLowerCase().includes('no encontramos');
+        if (isLoginMode && notFound) {
+          Alert.alert('SYNCRONOS', 'Ups no logramos encontrar esta cuenta :(');
+          return;
+        }
+        Alert.alert('SYNCRONOS', data.mensaje || 'No se pudo iniciar sesion.');
         return;
       }
 
@@ -547,9 +646,11 @@ export default function AuthScreen({ navigation, route }) {
   const goToNextProfileStep = () => {
     if (!currentProfileStep?.canContinue) {
       if (currentProfileStep?.id === 'fotos') {
-        Alert.alert('Error', 'Agrega al menos una foto real antes de continuar.');
-      } else if (currentProfileStep?.id === 'rango_edad') {
-        Alert.alert('Error', 'El rango de edad no es valido.');
+        Alert.alert('Error', 'Agrega minimo dos fotos reales antes de continuar.');
+      } else if (currentProfileStep?.id === 'ubicacion') {
+        Alert.alert('Error', 'Necesitamos tu ubicacion actual para continuar con SYNCRONOS.');
+      } else if (currentProfileStep?.id === 'preferencias') {
+        Alert.alert('Error', 'Revisa tus filtros antes de continuar.');
       }
       return;
     }
@@ -581,13 +682,18 @@ export default function AuthScreen({ navigation, route }) {
       return;
     }
 
-    if (Number(edadMinPref) > Number(edadMaxPref)) {
+    if (!ubicacion || !Number.isFinite(latitud) || !Number.isFinite(longitud)) {
+      Alert.alert('Error', 'Necesitamos tu ubicacion actual para crear el perfil.');
+      return;
+    }
+
+    if (currentAgeMin > currentAgeMax) {
       Alert.alert('Error', 'El rango de edad no es valido.');
       return;
     }
 
-    if (!fotos.some(Boolean)) {
-      Alert.alert('Error', 'Agrega al menos una foto real antes de crear tu perfil.');
+    if (selectedPhotosCount < 2) {
+      Alert.alert('Error', 'Agrega minimo dos fotos reales antes de crear tu perfil.');
       return;
     }
 
@@ -756,7 +862,6 @@ export default function AuthScreen({ navigation, route }) {
       </WizardCard>
     </Animated.View>
   );
-
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.logo}>SYNCRONOS</Text>
@@ -819,28 +924,6 @@ export default function AuthScreen({ navigation, route }) {
         suggestedValue={inferTimeZoneFromLocationLabel(lugarNacimiento)}
         onClose={() => setShowBirthTimezoneSelector(false)}
         onSelect={setTimezoneNacimiento}
-      />
-
-      <LocationSelectorModal
-        visible={showCurrentLocationSelector}
-        title="Elige tu ubicacion actual"
-        helperText="Puedes buscar tu ciudad o usar tu ubicacion actual desde la app."
-        placeholder="Ejemplo: Bogota, Colombia"
-        currentValue={ubicacion}
-        allowCurrentLocation
-        currentLocationLabel="Usar mi ubicacion"
-        onClose={() => setShowCurrentLocationSelector(false)}
-        onSelect={(location) => {
-          setUbicacion(location.label);
-          setLatitud(location.latitude);
-          setLongitud(location.longitude);
-          setConsentimientoUbicacion(true);
-          setLocationMessage(
-            location.source === 'current-location'
-              ? 'Ubicacion actual vinculada desde la app.'
-              : 'Ciudad seleccionada para tus filtros por distancia.'
-          );
-        }}
       />
     </ScrollView>
   );
@@ -985,15 +1068,46 @@ const styles = StyleSheet.create({
   selectionTileDescriptionActive: {
     color: '#130E22',
   },
-  inlineInputs: { flexDirection: 'row', gap: 10 },
-  compactInput: { flex: 1 },
-  toggleRow: {
+  locationCard: {
+    backgroundColor: '#11112a',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#242448',
+    padding: 16,
+  },
+  locationCardTitle: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  locationCardText: {
+    color: '#c9c9db',
+    lineHeight: 21,
+    marginTop: 10,
+  },
+  locationLoadingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    paddingVertical: 8,
+    gap: 10,
+    marginTop: 14,
   },
-  toggleLabel: { color: '#fff', flex: 1, lineHeight: 20 },
+  locationLoadingText: {
+    color: '#D4AF37',
+    fontWeight: '700',
+  },
+  locationActionButton: {
+    marginTop: 16,
+    backgroundColor: '#D4AF37',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  locationActionText: {
+    color: '#050510',
+    fontWeight: '800',
+  },
+  sliderGroup: {
+    marginTop: 2,
+  },
   helperText: { color: '#D4AF37', marginBottom: 10 },
 });

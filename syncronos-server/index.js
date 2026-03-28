@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+﻿const crypto = require('crypto');
 const cors = require('cors');
 const express = require('express');
 const fs = require('fs');
@@ -23,7 +23,7 @@ const io = new Server(server, {
 });
 const expo = new Expo();
 const PORT = 3000;
-const MAX_PHOTOS_PER_PROFILE = 3;
+const MAX_PHOTOS_PER_PROFILE = 6;
 const MAX_PROFILE_PROMPTS = 3;
 const MAX_PHOTO_SIZE_BYTES = 8 * 1024 * 1024;
 const PHOTO_REPORT_HIDE_THRESHOLD = 3;
@@ -1506,3 +1506,4 @@ app.use((error, _req, res, next) => {
 });
 
 server.listen(PORT, () => console.log(`SYNCRONOS en puerto ${PORT}`));
+

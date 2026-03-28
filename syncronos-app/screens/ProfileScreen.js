@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useMemo, useState } from 'react';
+﻿import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { AppContext } from '../context/AppContext';
 import AstralPickerModal from '../components/AstralPickerModal';
@@ -102,6 +102,11 @@ export default function ProfileScreen() {
   const saveProfile = async () => {
     if (Number(draft.edad_min_pref) > Number(draft.edad_max_pref)) {
       Alert.alert('Error', 'El rango de edad no es valido.');
+      return;
+    }
+
+    if (photoDrafts.filter(Boolean).length < 2) {
+      Alert.alert('Error', 'Manten minimo dos fotos reales en tu perfil.');
       return;
     }
 
@@ -467,3 +472,5 @@ const styles = StyleSheet.create({
   },
   logoutText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });
+
+

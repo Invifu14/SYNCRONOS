@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { ActivityIndicator, Alert, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { createPhotoDraftFromAsset, getPhotoDraftUri } from '../utils/photos';
@@ -85,7 +85,7 @@ function PhotoSlotCard({ item, index, onChange, disabled, moderated }) {
       </View>
 
       <Text style={styles.slotHint}>
-        {item?.remoteUrl ? 'Foto lista para mostrarse.' : item ? 'Pendiente de subir al servidor.' : 'Agrega una foto real.'}
+        {item?.remoteUrl ? 'Foto lista para mostrarse.' : item ? 'Listos para subir cuando tu digas :)' : 'Agrega una foto real.'}
       </Text>
     </View>
   );
