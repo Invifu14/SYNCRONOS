@@ -182,6 +182,27 @@ export default function AuthScreen({ navigation, route }) {
     return value;
   };
 
+  const calculateAgeFromBirthDate = (value) => {
+    if (!value) return null;
+    const [year, month, day] = value.split('-').map((part) => Number.parseInt(part, 10));
+    if (!year || !month || !day) return null;
+
+    const birthDateValue = new Date(year, month - 1, day);
+    if (Number.isNaN(birthDateValue.getTime())) return null;
+
+    const today = new Date();
+    let age = today.getFullYear() - year;
+    const beforeBirthday =
+      today.getMonth() < month - 1 ||
+      (today.getMonth() === month - 1 && today.getDate() < day);
+
+    if (beforeBirthday) {
+      age -= 1;
+    }
+
+    return age;
+  };
+
   const resolveCurrentLocation = useCallback(async () => {
     setResolvingCurrentLocation(true);
     setLocationMessage('');
@@ -658,6 +679,20 @@ export default function AuthScreen({ navigation, route }) {
       return;
     }
 
+    if (currentProfileStep?.id === 'nacimiento') {
+      const age = calculateAgeFromBirthDate(fecha);
+
+      if (age === null) {
+        Alert.alert('Error', 'Selecciona una fecha de nacimiento valida para continuar.');
+        return;
+      }
+
+      if (age < 18) {
+        Alert.alert('Error', 'SYNCRONOS solo esta disponible para mayores de 18 anos.');
+        return;
+      }
+    }
+
     if (profileStepIndex === profileSteps.length - 1) {
       registrar();
       return;
@@ -1114,6 +1149,7 @@ const styles = StyleSheet.create({
   },
   helperText: { color: '#D4AF37', marginBottom: 10 },
 });
+
 
 
 

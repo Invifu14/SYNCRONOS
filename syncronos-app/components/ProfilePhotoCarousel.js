@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+﻿import React, { useMemo, useState } from 'react';
 import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 const clampIndex = (value, total) => {
@@ -11,6 +11,8 @@ export default function ProfilePhotoCarousel({
   height = 420,
   borderRadius = 20,
   emptyLabel = 'Sin foto visible',
+  imageBlurRadius = 0,
+  hideIndicators = false,
   children,
 }) {
   const normalizedPhotos = useMemo(() => [...new Set((photos || []).filter(Boolean))], [photos]);
@@ -44,7 +46,7 @@ export default function ProfilePhotoCarousel({
         >
           {normalizedPhotos.map((photo) => (
             <View key={photo} style={[styles.slide, width ? { width } : styles.slideFill]}>
-              <Image source={{ uri: photo }} style={styles.image} />
+              <Image source={{ uri: photo }} style={styles.image} blurRadius={imageBlurRadius} />
             </View>
           ))}
         </ScrollView>
@@ -54,7 +56,7 @@ export default function ProfilePhotoCarousel({
         </View>
       )}
 
-      {normalizedPhotos.length > 1 ? (
+      {normalizedPhotos.length > 1 && !hideIndicators ? (
         <>
           <View style={styles.counterPill}>
             <Text style={styles.counterText}>{`${activeIndex + 1}/${normalizedPhotos.length}`}</Text>

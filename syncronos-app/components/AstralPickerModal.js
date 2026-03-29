@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   ImageBackground,
@@ -42,6 +42,14 @@ const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
 function WheelColumn({ items, selectedValue, onChange, width = 1 }) {
   const listRef = useRef(null);
   const wheelItems = useMemo(() => buildWheelItems(items), [items]);
+  const isDraggingRef = useRef(false);
+  const hasMomentumRef = useRef(false);
+  const internalUpdateRef = useRef(false);
+  const selectedValueRef = useRef(selectedValue);
+
+  useEffect(() => {
+    selectedValueRef.current = selectedValue;
+  }, [selectedValue]);
 
   const scrollToValue = (value, animated = false) => {
     const targetIndex = wheelItems.findIndex((item) => item.value === value);
@@ -54,18 +62,28 @@ function WheelColumn({ items, selectedValue, onChange, width = 1 }) {
   };
 
   useEffect(() => {
-    const timer = setTimeout(() => scrollToValue(selectedValue, false), 0);
+    const timer = setTimeout(() => {
+      if (internalUpdateRef.current) {
+        internalUpdateRef.current = false;
+        return;
+      }
+      if (isDraggingRef.current) return;
+      scrollToValue(selectedValue, false);
+    }, 0);
+
     return () => clearTimeout(timer);
   }, [selectedValue, wheelItems]);
 
-  const snapToClosest = (offsetY) => {
+  const commitClosest = (offsetY) => {
     const index = Math.round(offsetY / ITEM_HEIGHT) + SIDE_PADDING_ROWS;
     const item = wheelItems[index];
-    if (!item || item.spacer) {
-      return;
+    if (!item || item.spacer) return;
+
+    if (selectedValueRef.current !== item.value) {
+      internalUpdateRef.current = true;
+      onChange(item.value);
     }
-    onChange(item.value);
-    scrollToValue(item.value, true);
+    scrollToValue(item.value, false);
   };
 
   return (
@@ -78,6 +96,7 @@ function WheelColumn({ items, selectedValue, onChange, width = 1 }) {
         bounces={false}
         snapToInterval={ITEM_HEIGHT}
         decelerationRate="fast"
+        scrollEventThrottle={16}
         getItemLayout={(_data, index) => ({
           length: ITEM_HEIGHT,
           offset: ITEM_HEIGHT * index,
@@ -94,8 +113,23 @@ function WheelColumn({ items, selectedValue, onChange, width = 1 }) {
             </View>
           );
         }}
-        onMomentumScrollEnd={(event) => snapToClosest(event.nativeEvent.contentOffset.y)}
-        onScrollEndDrag={(event) => snapToClosest(event.nativeEvent.contentOffset.y)}
+        onScrollBeginDrag={() => {
+          isDraggingRef.current = true;
+          hasMomentumRef.current = false;
+        }}
+        onMomentumScrollBegin={() => {
+          hasMomentumRef.current = true;
+        }}
+        onMomentumScrollEnd={(event) => {
+          isDraggingRef.current = false;
+          hasMomentumRef.current = false;
+          commitClosest(event.nativeEvent.contentOffset.y);
+        }}
+        onScrollEndDrag={(event) => {
+          if (hasMomentumRef.current) return;
+          isDraggingRef.current = false;
+          commitClosest(event.nativeEvent.contentOffset.y);
+        }}
       />
     </View>
   );
@@ -122,11 +156,11 @@ export default function AstralPickerModal({
   }, [currentYear]);
 
   const hourOptions = useMemo(
-    () => Array.from({ length: 24 }, (_, value) => ({ value, label: `${value}`.padStart(2, '0') })),
+    () => Array.from({ length: 24 }, (_, hourValue) => ({ value: hourValue, label: `${hourValue}`.padStart(2, '0') })),
     []
   );
   const minuteOptions = useMemo(
-    () => Array.from({ length: 60 }, (_, value) => ({ value, label: `${value}`.padStart(2, '0') })),
+    () => Array.from({ length: 60 }, (_, minuteValue) => ({ value: minuteValue, label: `${minuteValue}`.padStart(2, '0') })),
     []
   );
 
@@ -135,6 +169,7 @@ export default function AstralPickerModal({
   const [selectedDay, setSelectedDay] = useState(initialDate.getDate());
   const [selectedHour, setSelectedHour] = useState(initialDate.getHours());
   const [selectedMinute, setSelectedMinute] = useState(initialDate.getMinutes());
+  const [confirmLocked, setConfirmLocked] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -144,6 +179,7 @@ export default function AstralPickerModal({
     setSelectedDay(nextDate.getDate());
     setSelectedHour(nextDate.getHours());
     setSelectedMinute(nextDate.getMinutes());
+    setConfirmLocked(false);
   }, [value, visible]);
 
   const dayOptions = useMemo(() => {
@@ -169,6 +205,9 @@ export default function AstralPickerModal({
   }, [mode, selectedDay, selectedHour, selectedMinute, selectedMonth, selectedYear]);
 
   const handleConfirm = () => {
+    if (confirmLocked) return;
+    setConfirmLocked(true);
+
     if (mode === 'time') {
       const nextDate = new Date(initialDate);
       nextDate.setHours(selectedHour, selectedMinute, 0, 0);
@@ -218,10 +257,10 @@ export default function AstralPickerModal({
             </View>
 
             <View style={styles.actions}>
-              <TouchableOpacity style={styles.secondaryButton} onPress={onClose}>
+              <TouchableOpacity style={styles.secondaryButton} onPress={onClose} disabled={confirmLocked}>
                 <Text style={styles.secondaryButtonText}>Cancelar</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.primaryButton} onPress={handleConfirm}>
+              <TouchableOpacity style={[styles.primaryButton, confirmLocked && styles.primaryButtonDisabled]} onPress={handleConfirm} disabled={confirmLocked}>
                 <Text style={styles.primaryButtonText}>Confirmar</Text>
               </TouchableOpacity>
             </View>
@@ -385,6 +424,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingVertical: 14,
     alignItems: 'center',
+  },
+  primaryButtonDisabled: {
+    opacity: 0.72,
   },
   primaryButtonText: {
     color: '#130E22',

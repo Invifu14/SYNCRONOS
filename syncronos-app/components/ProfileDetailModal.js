@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+﻿import React, { useMemo } from 'react';
 import {
   Modal,
   Pressable,
@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import PremiumPhotoOverlay from './PremiumPhotoOverlay';
 import ProfilePhotoCarousel from './ProfilePhotoCarousel';
 
 const getProfilePhotos = (profile) => {
@@ -26,6 +27,10 @@ export default function ProfileDetailModal({
   visible,
   profile,
   onClose,
+  hidePhotos = false,
+  photoLockTitle = 'Fotos premium',
+  photoLockSubtitle = 'Las fotos completas se desbloquearan cuando actives Afinidad premium.',
+  footerContent = null,
 }) {
   const photos = useMemo(() => getProfilePhotos(profile), [profile]);
   const prompts = useMemo(
@@ -46,20 +51,31 @@ export default function ProfileDetailModal({
             contentContainerStyle={styles.content}
             showsVerticalScrollIndicator={false}
           >
-            <ProfilePhotoCarousel photos={photos} height={420} borderRadius={24}>
-              <View style={styles.heroOverlay}>
-                <Text style={styles.name}>
-                  {profile.nombre}
-                  {profile.mostrar_edad === false ? '' : `, ${profile.edad ?? '?'}`}
-                </Text>
-                <Text style={styles.kicker}>
-                  {[profile.signo_zodiacal, profile.generacion, profile.intencion].filter(Boolean).join(' | ')}
-                </Text>
-                <Text style={styles.location}>
-                  {profile.ubicacion || 'Ubicacion privada'}
-                  {profile.distancia !== null && profile.distancia !== undefined ? ` | ${profile.distancia} km` : ''}
-                </Text>
-              </View>
+            <ProfilePhotoCarousel
+              photos={photos}
+              height={420}
+              borderRadius={24}
+              imageBlurRadius={hidePhotos ? 24 : 0}
+              hideIndicators={hidePhotos}
+            >
+              <>
+                {hidePhotos ? (
+                  <PremiumPhotoOverlay title={photoLockTitle} subtitle={photoLockSubtitle} />
+                ) : null}
+                <View style={[styles.heroOverlay, hidePhotos && styles.heroOverlayWithLock]}>
+                  <Text style={styles.name}>
+                    {profile.nombre}
+                    {profile.mostrar_edad === false ? '' : `, ${profile.edad ?? '?'}`}
+                  </Text>
+                  <Text style={styles.kicker}>
+                    {[profile.signo_zodiacal, profile.generacion, profile.intencion].filter(Boolean).join(' | ')}
+                  </Text>
+                  <Text style={styles.location}>
+                    {profile.ubicacion || 'Ubicacion privada'}
+                    {profile.distancia !== null && profile.distancia !== undefined ? ` | ${profile.distancia} km` : ''}
+                  </Text>
+                </View>
+              </>
             </ProfilePhotoCarousel>
 
             {profile.compatibilidad ? (
@@ -116,6 +132,8 @@ export default function ProfileDetailModal({
             ) : null}
           </ScrollView>
 
+          {footerContent ? <View style={styles.footerContent}>{footerContent}</View> : null}
+
           <TouchableOpacity style={styles.closeButton} onPress={onClose}>
             <Text style={styles.closeButtonText}>Cerrar perfil</Text>
           </TouchableOpacity>
@@ -152,6 +170,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     backgroundColor: 'rgba(5, 5, 16, 0.42)',
     padding: 20,
+  },
+  heroOverlayWithLock: {
+    backgroundColor: 'rgba(5, 5, 16, 0.34)',
   },
   name: {
     color: '#fff',
@@ -242,8 +263,14 @@ const styles = StyleSheet.create({
     color: '#fff',
     lineHeight: 21,
   },
+  footerContent: {
+    paddingHorizontal: 16,
+    paddingTop: 6,
+  },
   closeButton: {
-    margin: 16,
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 16,
     backgroundColor: '#D4AF37',
     borderRadius: 16,
     paddingVertical: 15,

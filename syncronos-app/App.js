@@ -1,4 +1,4 @@
-import React, { useContext, useEffect } from 'react';
+﻿import React, { useContext, useEffect } from 'react';
 import { ActivityIndicator, StatusBar, StyleSheet, View } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
@@ -41,7 +41,7 @@ const BASE_URL = MI_IP === 'localhost' ? 'http://localhost:3000' : `http://${MI_
 function HomeTabs() {
   return (
     <Tab.Navigator
-      initialRouteName="Radar"
+      initialRouteName="Afinidad"
       screenOptions={({ route }) => ({
         headerStyle: { backgroundColor: '#0f0f25' },
         headerTintColor: '#D4AF37',
@@ -63,8 +63,8 @@ function HomeTabs() {
         tabBarInactiveTintColor: '#666',
       })}
     >
-      <Tab.Screen name="Radar" component={MainScreen} />
       <Tab.Screen name="Afinidad" component={SuggestionsScreen} />
+      <Tab.Screen name="Radar" component={MainScreen} />
       <Tab.Screen name="Conexiones" component={VaultScreen} />
       <Tab.Screen name="Perfil" component={ProfileScreen} />
     </Tab.Navigator>
@@ -145,3 +145,5 @@ const styles = StyleSheet.create({
     backgroundColor: '#050510',
   },
 });
+
+
