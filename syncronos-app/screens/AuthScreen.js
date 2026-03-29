@@ -128,6 +128,7 @@ export default function AuthScreen({ navigation, route }) {
   const [longitud, setLongitud] = useState(null);
   const [locationMessage, setLocationMessage] = useState('');
   const [resolvingCurrentLocation, setResolvingCurrentLocation] = useState(false);
+  const [isAdjustingSlider, setIsAdjustingSlider] = useState(false);
 
   const [bio, setBio] = useState('');
   const [ocupacion, setOcupacion] = useState('');
@@ -499,9 +500,10 @@ export default function AuthScreen({ navigation, route }) {
             step={1}
             minLabel="18 anos"
             maxLabel="80 anos"
-            formatValue={(low, high) => `${low} - ${high} anos`}
+            formatValue={(low, high) => `${low}-${high}`}
             onChangeLow={(value) => setEdadMinPref(`${value}`)}
             onChangeHigh={(value) => setEdadMaxPref(`${value}`)}
+            onInteractionChange={setIsAdjustingSlider}
           />
           <SingleSlider
             label="Distancia maxima"
@@ -513,6 +515,7 @@ export default function AuthScreen({ navigation, route }) {
             maxLabel="300 km"
             formatValue={(value) => `${value} km`}
             onChange={(value) => setDistanciaMaxKm(`${value}`)}
+            onInteractionChange={setIsAdjustingSlider}
           />
         </View>
       ),
@@ -863,7 +866,7 @@ export default function AuthScreen({ navigation, route }) {
     </Animated.View>
   );
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} scrollEnabled={!isAdjustingSlider} keyboardShouldPersistTaps="handled">
       <Text style={styles.logo}>SYNCRONOS</Text>
       <Text style={styles.subtitle}>Conexiones guiadas por fecha de nacimiento, afinidad y conversacion real.</Text>
 
@@ -1111,3 +1114,6 @@ const styles = StyleSheet.create({
   },
   helperText: { color: '#D4AF37', marginBottom: 10 },
 });
+
+
+

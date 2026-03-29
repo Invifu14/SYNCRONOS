@@ -6,6 +6,7 @@ import LocationSelectorModal from '../components/LocationSelectorModal';
 import PhotoSlotsEditor from '../components/PhotoSlotsEditor';
 import ProfilePhotoCarousel from '../components/ProfilePhotoCarousel';
 import ProfilePromptsEditor from '../components/ProfilePromptsEditor';
+import { RangeSlider, SingleSlider } from '../components/PreferenceSliders';
 import TimeZoneSelectorModal from '../components/TimeZoneSelectorModal';
 import { GENDER_OPTIONS, ORIENTATION_OPTIONS, usesExpandedOrientationStep } from '../utils/identityOptions';
 import { extractPhotoUrls, normalizePhotoDrafts, uploadDraftPhotos } from '../utils/photos';
@@ -33,6 +34,7 @@ export default function ProfileScreen() {
   const [showBirthPlaceSelector, setShowBirthPlaceSelector] = useState(false);
   const [showBirthTimezoneSelector, setShowBirthTimezoneSelector] = useState(false);
   const [showCurrentLocationSelector, setShowCurrentLocationSelector] = useState(false);
+  const [isAdjustingSlider, setIsAdjustingSlider] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -64,6 +66,13 @@ export default function ProfileScreen() {
   if (!user || !draft) {
     return null;
   }
+
+  const parsedAgeMin = Number(draft.edad_min_pref);
+  const parsedAgeMax = Number(draft.edad_max_pref);
+  const parsedDistance = Number(draft.distancia_max_km);
+  const currentAgeMin = Math.max(18, Math.min(80, Number.isFinite(parsedAgeMin) ? parsedAgeMin : 18));
+  const currentAgeMax = Math.max(currentAgeMin, Math.min(80, Number.isFinite(parsedAgeMax) ? parsedAgeMax : 35));
+  const currentDistance = Math.max(1, Math.min(300, Number.isFinite(parsedDistance) ? parsedDistance : 50));
 
   const updateField = (key, value) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -151,7 +160,7 @@ export default function ProfileScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} scrollEnabled={!isAdjustingSlider} keyboardShouldPersistTaps="handled">
       <View style={styles.heroCard}>
         <ProfilePhotoCarousel photos={heroPhotos.length ? heroPhotos : [draft.foto].filter(Boolean)} height={260} borderRadius={18} />
         <Text style={styles.heroTitle}>{draft.nombre}</Text>
@@ -241,11 +250,31 @@ export default function ProfileScreen() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Filtros</Text>
-        <View style={styles.inlineRow}>
-          <TextInput style={[styles.input, styles.halfInput]} value={draft.edad_min_pref} onChangeText={(value) => updateField('edad_min_pref', value)} placeholder="Edad min" placeholderTextColor="#666" keyboardType="numeric" />
-          <TextInput style={[styles.input, styles.halfInput]} value={draft.edad_max_pref} onChangeText={(value) => updateField('edad_max_pref', value)} placeholder="Edad max" placeholderTextColor="#666" keyboardType="numeric" />
+        <Text style={styles.selectionHelper}>Ajusta tu rango ideal de edad y la distancia maxima desde aqui.</Text>
+        <View style={styles.sliderGroup}>
+          <RangeSlider
+            label="Rango de edad"
+            lowValue={currentAgeMin}
+            highValue={currentAgeMax}
+            min={18}
+            max={80}
+            step={1}
+            formatValue={(low, high) => `${low}-${high}`}
+            onChangeLow={(value) => updateField('edad_min_pref', `${value}`)}
+            onChangeHigh={(value) => updateField('edad_max_pref', `${value}`)}
+            onInteractionChange={setIsAdjustingSlider}
+          />
+          <SingleSlider
+            label="Distancia maxima"
+            value={currentDistance}
+            min={1}
+            max={300}
+            step={1}
+            formatValue={(value) => `${value} km`}
+            onChange={(value) => updateField('distancia_max_km', `${value}`)}
+            onInteractionChange={setIsAdjustingSlider}
+          />
         </View>
-        <TextInput style={styles.input} value={draft.distancia_max_km} onChangeText={(value) => updateField('distancia_max_km', value)} placeholder="Distancia maxima" placeholderTextColor="#666" keyboardType="numeric" />
         <View style={styles.toggleRow}>
           <Text style={styles.toggleLabel}>Mostrar edad en tu perfil</Text>
           <Switch value={!!draft.mostrar_edad} onValueChange={(value) => updateField('mostrar_edad', value)} thumbColor="#D4AF37" trackColor={{ false: '#333', true: '#4a4120' }} />
@@ -444,6 +473,7 @@ const styles = StyleSheet.create({
     color: '#130E22',
   },
   halfInput: { flex: 1 },
+  sliderGroup: { marginBottom: 4 },
   toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -472,5 +502,9 @@ const styles = StyleSheet.create({
   },
   logoutText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });
+
+
+
+
 
 
